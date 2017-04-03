@@ -3,17 +3,17 @@ hexitec-objs = HexitecCamera.o \
 	HexitecDetInfoCtrlObj.o \
 	HexitecSyncCtrlObj.o \
 	HexitecSavingCtrlObj.o \
-#	HexitecProcessingTask.o 
+	HexitecProcessingTask.o \
+	HexitecSavingTask.o \
 
 SRCS = $(hexitec-objs:.o=.cpp) 
 
 CXXFLAGS += -I../include \
+			-I../sdk/include \
 			-I../../../hardware/include \
 			-I../../../common/include \
 			-I../../../control/include \
 			-I../../../control/software_operation/include \
-			-I../sdk/include \
-			-I../sdk/GigE \
 			-I../../../third-party/Processlib/core/include \
 			-I/opt/pleora/ebus_sdk/CentOS-RHEL-7-x86_64/include \
 			-fPIC -g -Wno-unknown-pragmas -std=c++11
@@ -28,6 +28,7 @@ all:	Hexitec.o
 
 Hexitec.o:	$(hexitec-objs)
 	$(LD) -o $@ -r $+ ../sdk/src/HexitecAPI.o ../sdk/tools/src/libINIReader.o
+#	$(LD) -o $@ -r $+ 
 
 clean:
 	rm -f *.o *.P

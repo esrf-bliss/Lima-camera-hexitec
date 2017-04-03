@@ -42,7 +42,7 @@ Interface::Interface(Camera& cam) : m_cam(cam) {
 	m_cap_list.push_back(HwCap(m_det_info));
 	m_cap_list.push_back(HwCap(m_sync));
 
-	HwBufferCtrlObj *buffer = cam.getBufferCtrlObj();
+	HwBufferCtrlObj *buffer = m_cam.getBufferCtrlObj();
 	m_cap_list.push_back(HwCap(buffer));
 
 	m_saving = m_cam.getSavingCtrlObj();

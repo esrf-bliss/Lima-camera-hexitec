@@ -156,10 +156,10 @@ SavingCtrlObj::SavingCtrlObj(Camera& camera, int nb_streams) :
 		HwSavingCtrlObj(HwSavingCtrlObj::COMMON_HEADER | HwSavingCtrlObj::MANUAL_WRITE, false), m_nb_streams(nb_streams) {
 	DEB_CONSTRUCTOR();
 	m_stream = new HwSavingStream *[m_nb_streams];
-	m_stream[0] = new HwSavingStream(camera);
-	m_stream[1] = new HwSavingStream(camera);
-	m_stream[0]->setActive(true);
-	m_stream[1]->setActive(true);
+	for (auto i=0; i<m_nb_streams; i++) {
+		m_stream[i] = new HwSavingStream(camera, i);
+		m_stream[i]->setActive(true);
+	}
 }
 
 SavingCtrlObj::~SavingCtrlObj() {
@@ -249,7 +249,7 @@ void SavingCtrlObj::setOverwritePolicy(const std::string& overwritePolicy, int s
 	}
 }
 
-/** @brief write manually a frame
+/** @brief write a frame manually
  */
 void SavingCtrlObj::writeFrame(HwFrameInfoType& hwFrameInfo, int stream_idx) {
 	DEB_MEMBER_FUNCT();
@@ -258,7 +258,7 @@ void SavingCtrlObj::writeFrame(HwFrameInfoType& hwFrameInfo, int stream_idx) {
 	}
 }
 
-/** @brief read manually a frame
+/** @brief read a frame manually
  */
 void SavingCtrlObj::readFrame(HwFrameInfoType& info, int frame_nr, int stream_idx) {
 	DEB_MEMBER_FUNCT();
@@ -316,8 +316,8 @@ std::string SavingCtrlObj::_getFullPath(int image_number, int stream_idx) const 
 //=============================================
 // HwSavingStream
 //=============================================
-SavingCtrlObj::HwSavingStream::HwSavingStream(Camera& camera) :
-		m_cam(camera) {
+SavingCtrlObj::HwSavingStream::HwSavingStream(Camera& camera, int streamNb) :
+		m_cam(camera), m_streamNb(streamNb) {
 }
 
 bool SavingCtrlObj::HwSavingStream::isActive() const {
@@ -399,7 +399,7 @@ void SavingCtrlObj::HwSavingStream::stop() {
 
 void SavingCtrlObj::HwSavingStream::prepare() {
 	DEB_MEMBER_FUNCT();
-	std::cout << "Entering SavingCtrlObj prepare &&&&&&&&&&&&&&&&&&&&&&&&" << std::endl;
+	DEB_TRACE() << "Entering SavingCtrlObj prepare stream " << m_streamNb;
 	std::string filename;
 	if (m_suffix != ".hdf")
 		THROW_HW_ERROR(lima::Error) << "Suffix must be .hdf";
@@ -417,10 +417,10 @@ void SavingCtrlObj::HwSavingStream::prepare() {
 
 		if (m_overwritePolicy == "Overwrite") {
 			// overwrite existing file
-			m_file = std::move(std::unique_ptr < H5File > (new H5File(filename, H5F_ACC_TRUNC)));
+			m_file = new H5File(filename, H5F_ACC_TRUNC);
 		} else if (m_overwritePolicy == "Abort") {
 			// fail if file already exists
-			m_file = std::move(std::unique_ptr < H5File > (new H5File(filename, H5F_ACC_EXCL)));
+			m_file = new H5File(filename, H5F_ACC_EXCL);
 		} else {
 			THROW_CTL_ERROR(Error) << "Append and multiset  not supported !";
 		}
@@ -434,7 +434,7 @@ void SavingCtrlObj::HwSavingStream::prepare() {
 		m_cam.getDetectorImageSize(size);
 		m_nrasters = size.getHeight();
 		m_npixels = size.getWidth();
-		m_cam.getNbFrames(m_nframes);
+		m_nframes = m_frames_per_file;
 		{
 			// ISO 8601 Time format
 			time_t now;
@@ -447,11 +447,17 @@ void SavingCtrlObj::HwSavingStream::prepare() {
 		Group instrument = Group(m_entry->createGroup("Instrument"));
 		string nxinstrument = "NXinstrument";
 		write_h5_attribute(instrument, "NX_class", nxinstrument);
-		Group detector = Group(instrument.createGroup("Hexitec"));
+		m_instrument_detector = new Group(instrument.createGroup("Hexitec"));
 		string nxdetector = "NXdetector";
-		write_h5_attribute(detector, "NX_class", nxdetector);
+		write_h5_attribute(*m_instrument_detector, "NX_class", nxdetector);
 
-		Group det_info = Group(detector.createGroup("detector_information"));
+		Group measurement = Group(m_entry->createGroup("measurement"));
+		string nxcollection = "NXcollection";
+		write_h5_attribute(measurement, "NX_class", nxcollection);
+		m_measurement_detector = new Group(measurement.createGroup("Hexitec"));
+		write_h5_attribute(*m_measurement_detector, "NX_class", nxdetector);
+
+		Group det_info = Group(m_instrument_detector->createGroup("detector_information"));
 		Group det_params = Group(det_info.createGroup("parameters"));
 		double rate;
 		m_cam.getFrameRate(rate);
@@ -510,7 +516,7 @@ void SavingCtrlObj::HwSavingStream::prepare() {
 		plist.setChunk(RANK_THREE, chunk_dims);
 
 		m_image_dataspace = new DataSpace(RANK_THREE, data_dims, max_dims); // create new dspace
-		m_image_dataset = new DataSet(detector.createDataSet("raw_image", PredType::NATIVE_UINT16, *m_image_dataspace, plist));
+		m_image_dataset = new DataSet(m_measurement_detector->createDataSet("raw_image", PredType::NATIVE_UINT16, *m_image_dataspace, plist));
 
 	} catch (FileIException &error) {
 		THROW_CTL_ERROR(Error) << "File " << filename << " not opened successfully";
@@ -536,20 +542,26 @@ void SavingCtrlObj::HwSavingStream::prepare() {
 
 void SavingCtrlObj::HwSavingStream::writeFrame(HwFrameInfoType& frame_info) {
 	DEB_MEMBER_FUNCT();
+	try {
+		uint16_t* image_data = (uint16_t*) frame_info.frame_ptr;
+		FrameDim fdim = frame_info.frame_dim;
+		Size size = fdim.getSize();
 
-	uint16_t *image_data = (uint16_t*) frame_info.frame_ptr;
-	std::cout << "writing frame number " << DEB_VAR1(frame_info.acq_frame_nb) << std::endl;
+		hsize_t slab_dim[3];
+		slab_dim[2] = m_npixels;
+		slab_dim[1] = m_nrasters;
+		slab_dim[0] = 1;
+		DataSpace slabspace = DataSpace(RANK_THREE, slab_dim);
 
-	hsize_t slab_dim[3];
-	slab_dim[2] = m_npixels;
-	slab_dim[1] = m_nrasters;
-	slab_dim[0] = 1;
-	DataSpace slabspace = DataSpace(RANK_THREE, slab_dim);
-
-	hsize_t offset[] = { (unsigned) frame_info.acq_frame_nb, 0, 0 };
-	hsize_t count[] = { 1, (unsigned) m_npixels, (unsigned) m_nrasters };
-	m_image_dataspace->selectHyperslab(H5S_SELECT_SET, count, offset);
-	m_image_dataset->write(image_data, PredType::NATIVE_UINT16, slabspace, *m_image_dataspace);
+		hsize_t offset[] = { (unsigned) frame_info.acq_frame_nb, 0, 0 };
+		hsize_t count[] = { 1, (unsigned) m_npixels, (unsigned) m_nrasters };
+		DEB_TRACE() << DEB_VAR4(m_streamNb, frame_info.acq_frame_nb, offset, count);
+		m_image_dataspace->selectHyperslab(H5S_SELECT_SET, count, offset);
+		m_image_dataset->write(image_data, PredType::NATIVE_UINT16, slabspace, *m_image_dataspace);
+	}
+	catch (H5::Exception &e) {
+		THROW_CTL_ERROR(Error) << e.getCDetailMsg();
+	}
 }
 
 void SavingCtrlObj::HwSavingStream::close() {
@@ -567,12 +579,17 @@ void SavingCtrlObj::HwSavingStream::close() {
 	string etime = string(buf);
 	write_h5_dataset(*m_entry, "end_time", etime);
 
+	DEB_TRACE() << "closing stream " << m_streamNb;
 	m_file->close();
 	stop();
+
+	delete m_measurement_detector;
+	delete m_instrument_detector;
 	delete m_image_dataspace;
 	delete m_image_dataset;
+
 	delete m_entry;
-	m_file.reset();
+	delete m_file;
 }
 
 void SavingCtrlObj::HwSavingStream::setCommonHeader(const HeaderMap& headerMap) {

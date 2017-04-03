@@ -19,9 +19,12 @@
 // You should have received a copy of the GNU General Public License
 // along with this program; if not, see <http://www.gnu.org/licenses/>.
 //###########################################################################
+#ifndef HEXITEC_SAVINGTASK_H
+#define HEXITEC_SAVINGTASK_H
 
 #include "processlib/LinkTask.h"
 #include "lima/HwFrameInfo.h"
+#include "HexitecSavingCtrlObj.h"
 
 namespace lima {
 namespace Hexitec {
@@ -29,20 +32,43 @@ namespace Hexitec {
 class HexitecSavingTask: public LinkTask {
 DEB_CLASS_NAMESPC(DebModControl,"HexitecSavingTask","Control");
 public:
-	HexitecSavingTask(SavingCtrlObj& savingCtrlObj, int stream_idx) :
-			LinkTask(true), m_saving(savingCtrlObj), m_stream_idx(stream_idx) {
-	}
+	HexitecSavingTask(SavingCtrlObj& savingCtrlObj, int stream_idx);
+	~HexitecSavingTask();
 
-	Data process(Data& aData) {
-		DEB_MEMBER_FUNCT();
-		DEB_PARAM() << DEB_VAR1(aData);
-		FrameDim frameDim(aData.dimensions[0], aData.dimensions[1], Bpp16);
-		DEB_TRACE() << DEB_VAR3(aData.dimensions[0], aData.dimensions[1], aData.frameNumber);
-		HwFrameInfo hwFrameInfo(aData.frameNumber, aData.data(), &frameDim, aData.timestamp, true, HwFrameInfo::OwnerShip::Shared);
-		DEB_TRACE() << "saving frame " << aData.frameNumber;
-		m_saving.writeFrame(hwFrameInfo, m_stream_idx);
-		return aData;
-	}
+//	HexitecSavingTask(SavingCtrlObj& savingCtrlObj, int stream_idx) :
+//			LinkTask(true), m_saving(savingCtrlObj), m_stream_idx(stream_idx) {
+//	}
+
+	Data process(Data& aData);
+
+//	Data process(Data& aData) {
+//		DEB_MEMBER_FUNCT();
+//		int nframe;
+//		int frameNb;
+//		int width;
+//		int height;
+//		uint16_t *dptr = (uint16_t*) aData.data();
+//		DEB_PARAM() << DEB_VAR1(aData);
+//		if (aData.dimensions.size() == 2) {
+//			nframe = 1;
+//			width = aData.dimensions[0];
+//			height = aData.dimensions[1];
+//		} else {
+//			width = aData.dimensions[0];
+//			height = aData.dimensions[1];
+//			nframe = aData.dimensions[2];
+//		}
+//		for (auto i = 0; i < nframe; i++) {
+//			frameNb = (nframe == 1) ? aData.frameNumber : i;
+//			FrameDim frameDim(width, height, Bpp16);
+//			DEB_TRACE() << DEB_VAR3(width, height, frameNb);
+//			HwFrameInfo hwFrameInfo(frameNb, dptr, &frameDim, aData.timestamp, true,
+//					HwFrameInfo::OwnerShip::Shared);
+//			m_saving.writeFrame(hwFrameInfo, m_stream_idx);
+//			dptr += (width*height);
+//		}
+//		return aData;
+//	}
 
 private:
 	SavingCtrlObj m_saving;
@@ -62,3 +88,4 @@ private:
 //	}
 }
 }
+#endif

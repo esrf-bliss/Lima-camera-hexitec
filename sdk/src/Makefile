@@ -1,4 +1,5 @@
 hexitecApi-objs = HexitecApi.o GigE.o
+#hexitecApi-objs = HexitecDummy.o
 
 SRCS = $(hexitecApi-objs:.o=.cpp) 
 

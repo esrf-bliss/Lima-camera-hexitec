@@ -1,7 +1,7 @@
 //###########################################################################
 // This file is part of LImA, a Library for Image Acquisition
 //
-// Copyright (C) : 2009-2016
+// Copyright (C) : 2009-2017
 // European Synchrotron Radiation Facility
 // BP 220, Grenoble 38043
 // FRANCE
@@ -26,10 +26,14 @@
 #include <limits>
 #include <memory>
 #include <future>
+#include <atomic>
 #include "lima/HwBufferMgr.h"
 #include "lima/HwMaxImageSizeCallback.h"
+#ifndef SIPCOMPILATION
 #include <HexitecApi.h>
+#endif
 #include <HexitecSavingCtrlObj.h>
+#include <HexitecSavingTask.h>
 
 namespace lima {
 namespace Hexitec {
@@ -43,7 +47,7 @@ DEB_CLASS_NAMESPC(DebModCamera, "Camera", "Hexitec");
 
 	friend class Interface;
 public:
-	Camera(std::string ipAddress, std::string configFilename, int bufferCount=50, int timeout=600);
+	Camera(const std::string& ipAddress, const std::string& configFilename, int bufferCount=50, int timeout=600, int asicPitch=250);
 	~Camera();
 
 	enum Status { Ready, Initialising, Exposure, Readout, Paused, Fault };
@@ -121,6 +125,7 @@ public:
 
 	bool isBinningAvailable();
 	Camera::Status getStatus();
+	void setStatus(Camera::Status status);
 
 	// Hexitec specific
 	void getEnvironmentalValues(Environment& env);
@@ -128,7 +133,6 @@ public:
 	void getCollectDcTimeout(int& timeout);
 	void setCollectDcTimeout(int timeout);
 	void collectOffsetValues();
-	void getAsicPitch(int& asicPitch);
 	void setType(ProcessType type);
 	void getType(ProcessType& type);
 	void setBinWidth(int binWidth);
@@ -144,17 +148,24 @@ public:
 	void setHvBiasOff();
 	void setSaveOpt(int  saveOpt);
 	void getSaveOpt(int& saveOpt);
+	void setBiasVoltageRefreshInterval(int millis);
+	void setBiasVoltageRefreshTime(int millis);
+	void setBiasVoltageSettleTime(int millis);
+	void getBiasVoltageRefreshInterval(int& millis);
+	void getBiasVoltageRefreshTime(int& millis);
+	void getBiasVoltageSettleTime(int& millis);
 
 #ifndef SIPCOMPILATION
 
 private:
 	class AcqThread;
 	class TimerThread;
+	class TaskEventCb;
 
 	// Buffer control object
-	SoftBufferCtrlObj m_bufferCtrlObj;
-	// Savi control object
-	SavingCtrlObj m_savingCtrlObj;
+	SoftBufferCtrlObj* m_bufferCtrlObj;
+	// Saving control object
+	SavingCtrlObj* m_savingCtrlObj;
 
 	std::unique_ptr<AcqThread> m_acq_thread;
 	std::unique_ptr<TimerThread> m_timer_thread;
@@ -162,10 +173,12 @@ private:
 
 	Cond m_cond;
 	Cond m_cond_saving;
-	volatile bool m_quit;
-	volatile bool m_acq_started;
-	volatile bool m_thread_running;
-	volatile bool m_timer_wait_flag;
+	std::atomic<bool> m_quit;
+	std::atomic<bool> m_acq_started;
+	std::atomic<bool> m_thread_running;
+	std::atomic<bool> m_finished_saving;
+	std::atomic<int> m_image_number;
+	std::atomic<int> m_status;
 
 	ImageType m_detectorImageType;
 	std::string m_detector_type;
@@ -183,9 +196,7 @@ private:
 	double m_exp_time;
 	double m_latency_time;
 	double m_frameTime;
-	int m_image_number;
 	int m_nb_frames;
-	Camera::Status m_status;
 	TrigMode m_trig_mode;
 	int m_collectDcTimeout;
 // for processing

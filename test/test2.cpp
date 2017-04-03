@@ -18,7 +18,7 @@ int main() {
 	std::cout << "Error      :" << errorCodeString << std::endl;
 	std::cout << "Description:" << errorDescription << std::endl;
 	uint8_t useTermChar = true;
-	result = hexitec.openSerialPort( PvDeviceSerialBulk0, (2<<16), useTermChar, 0x0d);
+	result = hexitec.openSerialPortBulk0((2<<16), useTermChar, 0x0d);
 	std::cout << "return code from openSerialPort = " << result << std::endl;
 	uint8_t customerId;
 	uint8_t projectId;
@@ -98,7 +98,7 @@ int main() {
 	for (auto i = 0; i < 64000; i++) {
 		buffer[i] = 0;
 	}
-	hexitec.startAcquisition();
+	hexitec.startAcq();
 	for (auto m=0; m<10; m++) {
 		std::cout << "!!!!!!!!!!!!!!! Frame " << m << std::endl;
 		int rc = hexitec.retrieveBuffer(bptr, frametimeout);
@@ -114,7 +114,7 @@ int main() {
 			std::cout << "|" << std::endl;
 		}
 	}
-	hexitec.stopAcquisition();
+	hexitec.stopAcq();
 	return 0;
 }
 

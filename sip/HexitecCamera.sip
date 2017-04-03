@@ -1,7 +1,7 @@
 //###########################################################################
 // This file is part of LImA, a Library for Image Acquisition
 //
-// Copyright (C) : 2009-2014
+// Copyright (C) : 2009-2017
 // European Synchrotron Radiation Facility
 // BP 220, Grenoble 38043
 // FRANCE
@@ -32,7 +32,7 @@ class Camera
 
 public:
 
-	enum Status { Ready, Initialising, Exposure, Readout, Fault };
+	enum Status { Ready, Initialising, Exposure, Readout, Paused, Fault };
 	enum SaveOpt { SaveRaw=1, SaveProcessed=2, SaveHistogram=4 };
 	enum ProcessType {RAW,SORT,CSA,CSD,CSA_NF,CSD_NF};
 
@@ -60,16 +60,14 @@ public:
 		double ntcTemperature;
 	};
 
-	Camera(std::string ipAddress, std::string configFilename, int bufferCount=50, int timeout=600);
+	Camera(std::string& ipAddress, std::string& configFilename, int bufferCount, int timeout, int asicPitch);
 	~Camera();
 
 	void initialise();
+	void prepareAcq();
 	void startAcq();
 	void stopAcq();
-	void prepareAcq();
-	void reset();
-
-//	void getStatus(Camera::Status& status /Out/);
+//	void reset();
 
 	// detector info object
 	void getPixelSize(double& sizex /Out/, double& sizey /Out/);
@@ -98,6 +96,7 @@ public:
 	void getNbHwAcquiredFrames(int &nb_acq_frames /Out/);
 
 	bool isBinningAvailable();
+	Status getStatus();
 
 	// Hexitec specific
 	void getEnvironmentalValues(Environment& env /Out/);
@@ -105,7 +104,6 @@ public:
 	void getCollectDcTimeout(int& timeout /Out/);
 	void setCollectDcTimeout(int timeout);
 	void collectOffsetValues();
-	void getAsicPitch(int& asicPitch /Out/);
 	void setType(ProcessType type);
 	void getType(ProcessType& type /Out/);
 	void setBinWidth(int binWidth);
@@ -121,6 +119,12 @@ public:
 	void setHvBiasOff();
 	void setSaveOpt(int  saveOpt);
 	void getSaveOpt(int& saveOpt /Out/);
+	void setBiasVoltageRefreshInterval(int millis);
+	void setBiasVoltageRefreshTime(int millis);
+	void setBiasVoltageSettleTime(int millis);
+	void getBiasVoltageRefreshInterval(int& millis /Out/);
+	void getBiasVoltageRefreshTime(int& millis /Out/);
+	void getBiasVoltageSettleTime(int& millis /Out/);
 
 };
 

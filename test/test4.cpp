@@ -50,13 +50,26 @@ int main() {
 	Data data;
 	CtControl::Status status;
 
+
 	int stream;
-	int bufferCount = 1000;
-	int nframes = 600000;
+	int bufferCount = 250;
+//	int nframes = 953604; // maximum from test.dat
+//	int nframes = 200000;
+	int nframes = 50000;
+//	int nframes = 100;
+//	int nframes = 10;
+	int binWidth = 10;
+	int speclen = 800;
+	int nbins = (speclen / binWidth);
+	int asicPitch = 250;
+	int timeout = 500;
+	int nextNumber = 0;
+	int loop = 3;
 
 	try {
-		m_camera = new Camera("00:11:1c:01:eb:24", "/home/grm84/software/git/Lima/camera/hexitec/sdk/HexitecApi.ini", bufferCount, 500);
-//		m_camera = new Camera("169.254.63.243", "/home/grm84/software/git/Lima/camera/hexitec/sdk/HexitecApi.ini", bufferCount, 500);
+//		m_camera = new Camera("hexitec-test.dat", "/home/grm84/software/git/Lima/camera/hexitec/sdk/HexitecApi.ini", bufferCount, timeout, asicPitch);
+		m_camera = new Camera("00:11:1c:01:eb:24", "/home/grm84/software/git/Lima/camera/hexitec/sdk/HexitecApi.ini", bufferCount, timeout, asicPitch);
+//		m_camera = new Camera("169.254.63.243", "/home/grm84/software/git/Lima/camera/hexitec/sdk/HexitecApi.ini", bufferCount, timeout, asicPitch);
 		m_interface = new Interface(*m_camera);
 		m_control = new CtControl(m_interface);
 
@@ -70,9 +83,15 @@ int main() {
 //		m_camera->collectOffsetValues();
 //		std::cout << "Collected offset values" << std::endl;
 
-//		m_camera->setType(HexitecReconstruction::CSA_NF);
+		m_camera->setType(Camera::CSA_NF);
 		m_camera->setHighThreshold(8000);
-		m_camera->setSaveOpt(Camera::SaveRaw|Camera::SaveProcessed);
+		m_camera->setLowThreshold(0);
+		m_camera->setBinWidth(binWidth);
+		m_camera->setSpeclen(speclen);
+//		m_camera->setSaveOpt(Camera::SaveRaw);
+//		m_camera->setSaveOpt(Camera::SaveRaw | Camera::SaveProcessed);
+//		m_camera->setSaveOpt(Camera::SaveRaw | Camera::SaveHistogram);
+		m_camera->setSaveOpt(Camera::SaveRaw | Camera::SaveProcessed | Camera::SaveHistogram);
 
 		CtSaving* saving = m_control->saving();
 // for raw data stream 0
@@ -85,7 +104,7 @@ int main() {
 		saving->setPrefix("hexitec_", stream);
 		saving->setOverwritePolicy(CtSaving::Overwrite, stream);
 		saving->setFramesPerFile(nframes, stream);
-		saving->setNextNumber(0, stream);
+		saving->setNextNumber(nextNumber, stream);
 // for processed data stream 1
 		stream = 1;
 		saving->setStreamActive(stream, true);
@@ -95,32 +114,48 @@ int main() {
 		saving->setPrefix("hexitec_", stream);
 		saving->setOverwritePolicy(CtSaving::Overwrite, stream);
 		saving->setFramesPerFile(nframes, stream);
-		saving->setNextNumber(0, stream);
+		saving->setNextNumber(nextNumber, stream);
+		// for processed data stream 2
+		stream = 2;
+		saving->setStreamActive(stream, true);
+		saving->setDirectory("/home/grm84/data/histogram", stream);
+		saving->setFormat(CtSaving::HDF5, stream);
+		saving->setSuffix(".hdf", stream);
+		saving->setPrefix("hexitec_", stream);
+		saving->setOverwritePolicy(CtSaving::Overwrite, stream);
+		saving->setFramesPerFile(nbins, stream);
+		saving->setNextNumber(nextNumber, stream);
 		std::cout << "Saving setup is OK: " << std::endl;
-
-		// do acquisition
-		m_control->acquisition()->setAcqNbFrames(nframes);
-		m_control->prepareAcq();
-		m_control->startAcq();
-		while (1) {
-			sleep(1);
-			m_control->getStatus(status);
-//			std::cout << "Status: " << status.AcquisitionStatus << std::endl;
-			if (status.AcquisitionStatus != AcqRunning)
-				break;
+		int success = 0;
+		for (auto i = 0; i < loop; i++) {
+			// do acquisition
+			m_control->acquisition()->setAcqNbFrames(nframes);
+			m_control->prepareAcq();
+			m_control->startAcq();
+			while (1) {
+				sleep(5);
+				m_control->getStatus(status);
+//				std::cout << "Test4 Status: " << status.AcquisitionStatus << std::endl;
+				if (status.AcquisitionStatus == AcqReady) {
+					success++;
+					break;
+				} else if (status.AcquisitionStatus == AcqFault) {
+					break;
+				}
+			}
+			nextNumber++;
+			saving->setNextNumber(nextNumber, 0);
+			saving->setNextNumber(nextNumber, 1);
+			saving->setNextNumber(nextNumber, 2);
+			std::cout << "loop " << i << " complete" << std::endl;
 		}
 		sleep(2);
-
-//		m_control->ReadImage(data, 9999);
-
-//		uint16_t *bptr = (uint16_t*) data.data();
-//		for (auto i = 0; i < 80; i++) {
-//			for (auto j = 0; j < 80; j++) {
-//				std::cout << *bptr++ << " ";
-//			}
-//			std::cout << "|" << std::endl;
-//		}
+		std::cout << "success " << success <<std::endl;
 	} catch (Exception &e) {
 		std::cout << "Exception!!!!!!" << std::endl;
 	}
+	delete m_control;
+	delete m_interface;
+	delete m_camera;
+	return 0;
 }
