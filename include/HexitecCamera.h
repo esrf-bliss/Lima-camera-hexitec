@@ -22,7 +22,6 @@
 #ifndef HEXITEC_CAMERA_H
 #define HEXITEC_CAMERA_H
 
-#include <stdlib.h>
 #include <limits>
 #include <memory>
 #include <future>
@@ -137,7 +136,7 @@ public:
 	void getType(ProcessType& type);
 	void setBinWidth(int binWidth);
 	void getBinWidth(int& binWidth);
-	void setSpeclen(int speclen);
+	void setSpecLen(int speclen);
 	void getSpecLen(int& specLen);
 	void setLowThreshold(int threshold);
 	void getLowThreshold(int& threshold);

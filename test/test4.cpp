@@ -55,7 +55,7 @@ int main() {
 	int bufferCount = 250;
 //	int nframes = 953604; // maximum from test.dat
 //	int nframes = 200000;
-	int nframes = 50000;
+	int nframes = 40000;
 //	int nframes = 100;
 //	int nframes = 10;
 	int binWidth = 10;
@@ -87,7 +87,7 @@ int main() {
 		m_camera->setHighThreshold(8000);
 		m_camera->setLowThreshold(0);
 		m_camera->setBinWidth(binWidth);
-		m_camera->setSpeclen(speclen);
+		m_camera->setSpecLen(speclen);
 //		m_camera->setSaveOpt(Camera::SaveRaw);
 //		m_camera->setSaveOpt(Camera::SaveRaw | Camera::SaveProcessed);
 //		m_camera->setSaveOpt(Camera::SaveRaw | Camera::SaveHistogram);

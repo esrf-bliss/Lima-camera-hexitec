@@ -855,7 +855,7 @@ void Camera::getBinWidth(int& binWidth) {
 	binWidth = m_binWidth;
 }
 
-void Camera::setSpeclen(int speclen) {
+void Camera::setSpecLen(int speclen) {
 	m_speclen = speclen;
 }
 

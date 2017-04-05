@@ -60,7 +60,7 @@ public:
 		double ntcTemperature;
 	};
 
-	Camera(std::string& ipAddress, std::string& configFilename, int bufferCount, int timeout, int asicPitch);
+	Camera(const std::string& ipAddress, const std::string& configFilename, int bufferCount, int timeout, int asicPitch);
 	~Camera();
 
 	void initialise();
@@ -108,8 +108,8 @@ public:
 	void getType(ProcessType& type /Out/);
 	void setBinWidth(int binWidth);
 	void getBinWidth(int& binWidth /Out/);
-	void setSpeclen(int speclen);
-	void getSpecLen(int& specLen /Out/);
+	void setSpecLen(int speclen);
+	void getSpecLen(int& speclen /Out/);
 	void setLowThreshold(int threshold);
 	void getLowThreshold(int& threshold /Out/);
 	void setHighThreshold(int threshold);
