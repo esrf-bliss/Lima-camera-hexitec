@@ -555,7 +555,7 @@ Camera::AcqThread::~AcqThread() {
 void Camera::AcqThread::threadFunction() {
 	DEB_MEMBER_FUNCT();
 	int32_t rc;
-	uint8_t* bptr;
+	uint16_t* bptr;
 	StdBufferCbMgr& buffer_mgr = m_cam.m_bufferCtrlObj->getBuffer();
 	buffer_mgr.setStartTimestamp(Timestamp::now());
 	PoolThreadMgr::get().setNumberOfThread(12);
@@ -582,7 +582,7 @@ void Camera::AcqThread::threadFunction() {
 		bool continue_acq = true;
 		try {
 			m_cam.m_future_result.get();
-			DEB_TRACE() << "Starting acquisition";
+			DEB_ALWAYS() << "Starting acquisition";
 			rc = m_cam.m_hexitec->startAcq();
 			if (rc != HexitecAPI::NO_ERROR) {
 				DEB_ERROR() << "Failed to start acquisition " << DEB_VAR1(rc);
@@ -622,23 +622,23 @@ void Camera::AcqThread::threadFunction() {
 		}
 		while (continue_acq && m_cam.m_acq_started && (!m_cam.m_nb_frames || m_cam.m_image_number < m_cam.m_nb_frames)) {
 
-			bptr = (uint8_t*) buffer_mgr.getFrameBufferPtr(m_cam.m_image_number);
-			DEB_TRACE() << "Retrieving image# " << m_cam.m_image_number << "in bptr " << (void*) bptr;
-			rc = m_cam.m_hexitec->retrieveBuffer(bptr, m_cam.m_timeout);
+			bptr = (uint16_t*) buffer_mgr.getFrameBufferPtr(m_cam.m_image_number);
+			DEB_TRACE() << "Retrieving image# " << m_cam.m_image_number << " in bptr " << (void*) bptr;
+			rc = m_cam.m_hexitec->retrieveBuffer((uint8_t*)bptr, m_cam.m_timeout);
 			if (rc == HexitecAPI::NO_ERROR) {
 				if (m_cam.getStatus() == Camera::Exposure) {
 					Data srcData;
 					srcData.type = Data::UINT16;
 					srcData.dimensions = dimensions;
 					srcData.frameNumber = m_cam.m_image_number;
-					Buffer *fbuf = new Buffer();
-					fbuf->owner = Buffer::MAPPED;
-					fbuf->data = bptr;
+
+					Buffer *fbuf = new Buffer(width*height*sizeof(uint16_t));
 					srcData.setBuffer(fbuf);
 					fbuf->unref();
-					DEB_TRACE() << "Data created with buffer " << (void*)fbuf;
+					memcpy(srcData.data(), bptr, width*height*sizeof(uint16_t));
+
 					if (saveOpt & Camera::SaveRaw) {
-						std::cout << "Save raw frame " << m_cam.m_image_number << "\r";
+						DEB_TRACE() << "Save raw frame " << m_cam.m_image_number;
 						TaskMgr *taskMgr = new TaskMgr();
 						taskMgr->setLinkTask(0, m_savingTask0);
 						taskMgr->setInputData(srcData);
@@ -662,13 +662,13 @@ void Camera::AcqThread::threadFunction() {
 						concatData.setBuffer(newConcatBuffer);
 						newConcatBuffer->unref();
 						bptr16 = (uint16_t*)concatData.data();
-						memcpy(bptr16, srcData.data(), width*height*sizeof(uint16_t));
+						memcpy(bptr16, bptr, width*height*sizeof(uint16_t));
 						bptr16 += width*height;
 						memcpy(bptr16, m_lastFrame.data(),width*height*sizeof(uint16_t));
 
 						DEB_TRACE() << "Process raw frame " << m_cam.m_image_number << " and last frame " << m_lastFrame.frameNumber;
 						TaskMgr *taskMgr = new TaskMgr();
-						m_lastFrame = srcData.copy();
+						memcpy(m_lastFrame.data(), bptr,width*height*sizeof(uint16_t));
 						taskMgr->setLinkTask(1, processingTask);
 						taskMgr->setInputData(concatData);
 						DEB_TRACE() << "Adding frame " << m_cam.m_image_number << " to task to pool (proc) ";
@@ -691,7 +691,7 @@ void Camera::AcqThread::threadFunction() {
 		DEB_TRACE() << "Delta t2-t1: " << std::chrono::duration_cast < std::chrono::nanoseconds
 				> (t2 - t1).count() << " nanoseconds";
 
-		DEB_TRACE() << "Stop acquisition";
+		DEB_ALWAYS() << "Stop acquisition";
 		auto rc2 = m_cam.m_hexitec->stopAcq();
 		if (rc2 != HexitecAPI::NO_ERROR) {
 			DEB_ERROR() << "Failed to stop acquisition " << DEB_VAR1(rc);
@@ -700,32 +700,34 @@ void Camera::AcqThread::threadFunction() {
 		m_cam.setStatus(Camera::Readout);
 		DEB_TRACE() << "Setting bias off";
 		m_cam.setHvBiasOff();
-		std::cout << std::endl;
+		DEB_ALWAYS() << "Check for outstanding processes";
 		if (saveOpt & Camera::SaveProcessed || saveOpt & Camera::SaveHistogram) {
 			while (processingTask->getNbProcessedFrames() < m_cam.m_image_number) {
-				std::cout << "still processing " << processingTask->getNbProcessedFrames() << "\r";
+				DEB_TRACE() << "still processing " << processingTask->getNbProcessedFrames();
 				std::this_thread::sleep_for(std::chrono::milliseconds(1000));
 			}
 		}
 		if (saveOpt & Camera::SaveHistogram) {
-			DEB_TRACE() << "Save histogram ";
+			DEB_ALWAYS() << "Saving histogram ";
 			TaskMgr *taskMgr = new TaskMgr();
 			taskMgr->setLinkTask(0, m_savingTask2);
 			m_savingTask2->setEventCallback(m_eventCb);
 			Data histData = processingTask->getGlobalHistogram();
 			taskMgr->setInputData(histData);
 			PoolThreadMgr::get().addProcess(taskMgr);
-			std::cout << std::endl;
 			while (!m_cam.m_finished_saving) {
-				std::cout << "still saving" << "\r";
+				DEB_TRACE() << "still saving";
 				std::this_thread::sleep_for(std::chrono::milliseconds(1000));
 			}
 		}
+		DEB_ALWAYS() << "Closing streams 0 ";
 		m_cam.m_savingCtrlObj->close(0);
+		DEB_ALWAYS() << "Closing streams 1 ";
 		m_cam.m_savingCtrlObj->close(1);
+		DEB_ALWAYS() << "Closing streams 2 ";
 		m_cam.m_savingCtrlObj->close(2);
 		delete processingTask;
-		DEB_TRACE() << "Set status to ready";
+		DEB_ALWAYS() << "Set status to ready";
 		if (rc == HexitecAPI::NO_ERROR && rc2 == HexitecAPI::NO_ERROR) {
 			m_cam.setStatus(Camera::Ready);
 		} else {

@@ -52,19 +52,19 @@ int main() {
 
 
 	int stream;
-	int bufferCount = 250;
+	int bufferCount = 10;
 //	int nframes = 953604; // maximum from test.dat
-//	int nframes = 200000;
-	int nframes = 40000;
-//	int nframes = 100;
-//	int nframes = 10;
+	int nframes = 100000;
+//	int nframes = 10000;
+//	int nframes = 1000;
+//	int nframes = 1;
 	int binWidth = 10;
 	int speclen = 800;
 	int nbins = (speclen / binWidth);
 	int asicPitch = 250;
 	int timeout = 500;
 	int nextNumber = 0;
-	int loop = 3;
+	int loop = 5;
 
 	try {
 //		m_camera = new Camera("hexitec-test.dat", "/home/grm84/software/git/Lima/camera/hexitec/sdk/HexitecApi.ini", bufferCount, timeout, asicPitch);
