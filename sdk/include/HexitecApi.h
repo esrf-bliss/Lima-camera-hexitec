@@ -21,10 +21,7 @@
 #include <fstream>
 #include <functional>
 
-//#define DUMMYAPI
-#undef DUMMYAPI
-
-#ifndef DUMMYAPI
+#ifndef COMPILE_HEXITEC_DUMMY
 #include <GigE.h>
 #endif
 
@@ -227,7 +224,7 @@ private:
 	HexitecBiasConfig m_biasConfig;
 	std::ifstream m_file;
 
-	#ifndef DUMMYAPI
+	#ifndef COMPILE_HEXITEC_DUMMY
 	class HexitecArmedCb : public GigE::AcqArmedCallback {
 	public:
 		HexitecArmedCb(HexitecApi& api);
@@ -288,7 +285,7 @@ private:
 	double   temperatureDacValToTemperature(uint16_t number, double internalReference);
 
 
-	#endif // DUMMYAPI
+	#endif // COMPILE_HEXITEC_DUMMY
 };
 
 } // end namespace HexitecAPI

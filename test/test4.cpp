@@ -33,7 +33,6 @@
 
 #include "HexitecCamera.h"
 #include "HexitecInterface.h"
-//#include "HexitecReconstruction.h"
 
 using namespace std;
 using namespace lima;
@@ -54,8 +53,8 @@ int main() {
 	int stream;
 	int bufferCount = 10;
 //	int nframes = 953604; // maximum from test.dat
-	int nframes = 100000;
-//	int nframes = 10000;
+//	int nframes = 100000;
+	int nframes = 10000;
 //	int nframes = 1000;
 //	int nframes = 1;
 	int binWidth = 10;
@@ -67,9 +66,12 @@ int main() {
 	int loop = 5;
 
 	try {
-//		m_camera = new Camera("hexitec-test.dat", "/home/grm84/software/git/Lima/camera/hexitec/sdk/HexitecApi.ini", bufferCount, timeout, asicPitch);
+#ifdef COMPILE_HEXITEC_DUMMY
+		m_camera = new Camera("hexitec-test.dat", "/home/grm84/software/git/Lima/camera/hexitec/sdk/HexitecApi.ini", bufferCount, timeout, asicPitch);
+#else
 		m_camera = new Camera("00:11:1c:01:eb:24", "/home/grm84/software/git/Lima/camera/hexitec/sdk/HexitecApi.ini", bufferCount, timeout, asicPitch);
 //		m_camera = new Camera("169.254.63.243", "/home/grm84/software/git/Lima/camera/hexitec/sdk/HexitecApi.ini", bufferCount, timeout, asicPitch);
+#endif
 		m_interface = new Interface(*m_camera);
 		m_control = new CtControl(m_interface);
 
