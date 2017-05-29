@@ -26,7 +26,7 @@ import time
 
 bufferCount = 250
 #nframes = 953604; # maximum from test.dat
-nframes = 40000
+nframes = 10000
 binWidth = 10
 speclen = 800
 lowThreshold = 0;
@@ -35,7 +35,7 @@ nbins = (speclen / binWidth)
 asicPitch = 250
 timeout = 500
 nextNumber = 0
-loop = 3
+loop = 5 
 
 cam = PyTango.DeviceProxy('hexitec/tango/1')
 lima = PyTango.DeviceProxy('limaccd/tango/6')

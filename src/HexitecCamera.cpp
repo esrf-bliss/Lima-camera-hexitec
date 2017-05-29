@@ -25,6 +25,8 @@
 #include <unistd.h>
 #include <cfloat>
 
+#include <HexitecApi.h>
+
 #include "lima/Debug.h"
 #include "lima/Constants.h"
 #include "lima/Exceptions.h"
@@ -90,6 +92,24 @@ private:
 };
 
 //-----------------------------------------------------
+// internal private structure
+//-----------------------------------------------------
+struct Camera::Private
+{
+	std::unique_ptr<Camera::AcqThread> m_acq_thread;
+	std::unique_ptr<Camera::TimerThread> m_timer_thread;
+	std::unique_ptr<HexitecAPI::HexitecApi> m_hexitec;
+	std::atomic<bool> m_quit;
+	std::atomic<bool> m_acq_started;
+	std::atomic<bool> m_thread_running;
+	std::atomic<bool> m_finished_saving;
+	std::atomic<int> m_image_number;
+	std::atomic<int> m_status;
+	std::future<void> m_future_result;
+};
+
+
+//-----------------------------------------------------
 // @brief camera constructor
 //-----------------------------------------------------
 Camera::Camera(const std::string& ipAddress, const std::string& configFilename, int bufferCount, int timeout, int asicPitch) :
@@ -97,7 +117,7 @@ Camera::Camera(const std::string& ipAddress, const std::string& configFilename, 
 		m_asicPitch(asicPitch),
 		m_detectorImageType(Bpp16), m_detector_type("Hexitec"), m_detector_model("V1.0.0"), m_maxImageWidth(80),
 		m_maxImageHeight(80), m_x_pixelsize(1), m_y_pixelsize(1), m_offset_x(0), m_offset_y(0),
-		m_collectDcTimeout(100), m_acq_started(false), m_quit(false), m_processType(ProcessType::CSA),
+		m_collectDcTimeout(100), m_processType(ProcessType::CSA),
 		m_saveOpt(Camera::SaveRaw), m_binWidth(10), m_speclen(8000), m_lowThreshold(0), m_highThreshold(10000),
 		m_biasVoltageRefreshInterval(10000), m_biasVoltageRefreshTime(5000), m_biasVoltageSettleTime(2000) {
 
@@ -107,21 +127,25 @@ Camera::Camera(const std::string& ipAddress, const std::string& configFilename, 
 //	DebParams::setTypeFlags(DebParams::AllFlags);
 //	DebParams::setFormatFlags(DebParams::AllFlags);
 
+	m_private = std::shared_ptr<Private>(new Private);
+	m_private->m_acq_started = false;
+	m_private->m_quit = false;
+
 	m_savingCtrlObj = new SavingCtrlObj(*this, 3);
 	m_bufferCtrlObj = new SoftBufferCtrlObj();
 
 	setStatus(Camera::Initialising);
-	m_hexitec = std::unique_ptr < HexitecAPI::HexitecApi > (new HexitecAPI::HexitecApi(ipAddress, m_timeout));
+	m_private->m_hexitec = std::unique_ptr < HexitecAPI::HexitecApi > (new HexitecAPI::HexitecApi(ipAddress, m_timeout));
 	initialise();
 
 	// Acquisition Thread
-	m_acq_thread = std::unique_ptr < AcqThread > (new AcqThread(*this));
-	m_acq_started = false;
-	m_acq_thread->start();
+	m_private->m_acq_thread = std::unique_ptr < AcqThread > (new AcqThread(*this));
+	m_private->m_acq_started = false;
+	m_private->m_acq_thread->start();
 
 	// Timer thread for cycling the bias voltage
-	m_timer_thread = std::unique_ptr < TimerThread > (new TimerThread(*this));
-	m_timer_thread->start();
+	m_private->m_timer_thread = std::unique_ptr < TimerThread > (new TimerThread(*this));
+	m_private->m_timer_thread->start();
 
 	setStatus(Camera::Ready);
 	DEB_TRACE() << "Camera constructor complete";
@@ -133,8 +157,8 @@ Camera::Camera(const std::string& ipAddress, const std::string& configFilename, 
 Camera::~Camera() {
 	DEB_DESTRUCTOR();
 	setHvBiasOff();
-	m_hexitec->closePipeline();
-	m_hexitec->closeStream();
+	m_private->m_hexitec->closePipeline();
+	m_private->m_hexitec->closeStream();
 	PoolThreadMgr::get().quit();
 	delete m_bufferCtrlObj;
 	delete m_savingCtrlObj;
@@ -150,10 +174,10 @@ void Camera::initialise() {
 	std::string errorCodeString;
 	std::string errorDescription;
 
-	if (m_hexitec->readConfiguration(m_configFilename) != HexitecAPI::NO_ERROR) {
+	if (m_private->m_hexitec->readConfiguration(m_configFilename) != HexitecAPI::NO_ERROR) {
 		THROW_HW_ERROR(Error) << "Failed to read the configuration file " << DEB_VAR1(m_configFilename);
 	}
-	m_hexitec->initDevice(errorCode, errorCodeString, errorDescription);
+	m_private->m_hexitec->initDevice(errorCode, errorCodeString, errorDescription);
 	if (errorCode != HexitecAPI::NO_ERROR) {
 		DEB_TRACE() << "Error      :" << errorCodeString;
 		DEB_TRACE() << "Description:" << errorDescription;
@@ -161,7 +185,7 @@ void Camera::initialise() {
 	}
 	DEB_TRACE() << "Error code :" << errorCode;
 	uint8_t useTermChar = true;
-	rc = m_hexitec->openSerialPortBulk0((2 << 16), useTermChar, 0x0d);
+	rc = m_private->m_hexitec->openSerialPortBulk0((2 << 16), useTermChar, 0x0d);
 	if (rc != HexitecAPI::NO_ERROR) {
 		THROW_HW_ERROR(Error) << "Failed to open serial port " << DEB_VAR1(rc);
 	}
@@ -169,7 +193,7 @@ void Camera::initialise() {
 	uint8_t projectId;
 	uint8_t version;
 	uint8_t forceEqualVersion = false;
-	rc = m_hexitec->checkFirmware(customerId, projectId, version, forceEqualVersion);
+	rc = m_private->m_hexitec->checkFirmware(customerId, projectId, version, forceEqualVersion);
 	if (rc != HexitecAPI::NO_ERROR) {
 		THROW_HW_ERROR(Error) << "Failed to read firmware version information " << DEB_VAR1(rc);
 	}
@@ -180,7 +204,7 @@ void Camera::initialise() {
 	uint8_t width;
 	uint8_t height;
 	uint32_t collectDcTime;
-	rc = m_hexitec->configureDetector(width, height, m_frameTime, collectDcTime);
+	rc = m_private->m_hexitec->configureDetector(width, height, m_frameTime, collectDcTime);
 	if (rc != HexitecAPI::NO_ERROR) {
 		THROW_HW_ERROR(Error) << "Failed to configure the detector " << DEB_VAR1(rc);
 	}
@@ -194,7 +218,7 @@ void Camera::initialise() {
 	double asicTemperature;
 	double adcTemperature;
 	double ntcTemperature;
-	rc = m_hexitec->readEnvironmentValues(humidity, ambientTemperature, asicTemperature, adcTemperature, ntcTemperature);
+	rc = m_private->m_hexitec->readEnvironmentValues(humidity, ambientTemperature, asicTemperature, adcTemperature, ntcTemperature);
 	if (rc != HexitecAPI::NO_ERROR) {
 		THROW_HW_ERROR(Error) << "Failed to read environmental values " << DEB_VAR1(rc);
 	}
@@ -216,7 +240,7 @@ void Camera::initialise() {
 	double v3_8ana;
 	double peltierCurrent;
 
-	rc = m_hexitec->readOperatingValues(v3_3, hvMon, hvOut, v1_2, v1_8, v3, v2_5, v3_3ln, v1_65ln, v1_8ana, v3_8ana, peltierCurrent,
+	rc = m_private->m_hexitec->readOperatingValues(v3_3, hvMon, hvOut, v1_2, v1_8, v3, v2_5, v3_3ln, v1_65ln, v1_8ana, v3_8ana, peltierCurrent,
 			ntcTemperature);
 	if (rc != HexitecAPI::NO_ERROR) {
 		THROW_HW_ERROR(Error) << "Failed to read operating values" << DEB_VAR1(rc);
@@ -235,19 +259,19 @@ void Camera::initialise() {
 	DEB_TRACE() << "peltierCurrent :" << peltierCurrent;
 	DEB_TRACE() << "ntcTemperature :" << ntcTemperature;
 
-	rc = m_hexitec->setFrameFormatControl("Mono16", m_maxImageWidth, m_maxImageHeight, m_offset_x, m_offset_y, "One", "Off"); //IPEngineTestPattern");
+	rc = m_private->m_hexitec->setFrameFormatControl("Mono16", m_maxImageWidth, m_maxImageHeight, m_offset_x, m_offset_y, "One", "Off"); //IPEngineTestPattern");
 	if (rc != HexitecAPI::NO_ERROR) {
 		THROW_HW_ERROR(Error) << "Failed to set frame format control " << DEB_VAR1(rc);
 	}
 
 	//openStream needs to be called before createPipeline
-	rc = m_hexitec->openStream();
+	rc = m_private->m_hexitec->openStream();
 	if (rc != HexitecAPI::NO_ERROR) {
 		THROW_HW_ERROR(Error) << "Failed to open stream" << DEB_VAR1(rc);
 	}
 
 	DEB_TRACE() << "setting buffer count to " << m_bufferCount;
-	rc = m_hexitec->createPipelineOnly(m_bufferCount);
+	rc = m_private->m_hexitec->createPipelineOnly(m_bufferCount);
 	if (rc != HexitecAPI::NO_ERROR) {
 		THROW_HW_ERROR(Error) << "Failed to create pipeline" << DEB_VAR1(rc);
 	}
@@ -258,11 +282,11 @@ void Camera::initialise() {
 //-----------------------------------------------------------------------------
 void Camera::prepareAcq() {
 	DEB_MEMBER_FUNCT();
-	m_image_number = 0;
+	m_private->m_image_number = 0;
 	setHvBiasOn();
 	// wait asynchronously for the HV Bias to settle
 	// check the result before start acquisition in Acq thread.
-	m_future_result = std::async(std::launch::async, [=] {std::chrono::milliseconds(m_biasVoltageRefreshTime);});
+	m_private->m_future_result = std::async(std::launch::async, [=] {std::chrono::milliseconds(m_biasVoltageRefreshTime);});
 
 	Size image_size;
     ImageType image_type;
@@ -283,7 +307,7 @@ void Camera::prepareAcq() {
 void Camera::startAcq() {
 	DEB_MEMBER_FUNCT();
 	AutoMutex lock(m_cond.mutex());
-	m_acq_started = true;
+	m_private->m_acq_started = true;
 	m_saved_frame_nb = 0;
 	m_cond.broadcast();
 }
@@ -294,8 +318,8 @@ void Camera::startAcq() {
 void Camera::stopAcq() {
 	DEB_MEMBER_FUNCT();
 	AutoMutex lock(m_cond.mutex());
-	if (m_acq_started)
-		m_acq_started = false;
+	if (m_private->m_acq_started)
+		m_private->m_acq_started = false;
 }
 
 //-----------------------------------------------------------------------------
@@ -382,7 +406,7 @@ void Camera::setTrigMode(TrigMode trig_mode) {
 	default:
 		THROW_HW_ERROR(NotSupported) << DEB_VAR1(trig_mode);
 	}
-//	m_hexitec.setTrigger();
+//	m_private->m_hexitec.setTrigger();
 	m_trig_mode = trig_mode;
 }
 
@@ -482,7 +506,7 @@ void Camera::getNbFrames(int& nb_frames) {
 //-----------------------------------------------------------------------------
 void Camera::getNbHwAcquiredFrames(int &nb_acq_frames) {
 	DEB_MEMBER_FUNCT();
-	nb_acq_frames = m_image_number;
+	nb_acq_frames = m_private->m_image_number;
 }
 
 //-----------------------------------------------------------------------------
@@ -490,13 +514,13 @@ void Camera::getNbHwAcquiredFrames(int &nb_acq_frames) {
 //-----------------------------------------------------------------------------
 Camera::Status Camera::getStatus() {
 	DEB_MEMBER_FUNCT();
-	int status = m_status;
+	int status = m_private->m_status;
 	return static_cast<Camera::Status>(status);
 }
 
 void Camera::setStatus(Camera::Status status) {
 	AutoMutex lock(m_cond.mutex());
-	m_status = static_cast<int>(status);
+	m_private->m_status = static_cast<int>(status);
 }
 
 //-----------------------------------------------------------------------------
@@ -544,7 +568,7 @@ Camera::AcqThread::AcqThread(Camera &cam) : m_cam(cam) {
 Camera::AcqThread::~AcqThread() {
 	DEB_DESTRUCTOR();
 	AutoMutex lock(m_cam.m_cond.mutex());
-	m_cam.m_quit = true;
+	m_cam.m_private->m_quit = true;
 	m_cam.m_cond.broadcast();
 	lock.unlock();
 	delete m_eventCb;
@@ -564,26 +588,26 @@ void Camera::AcqThread::threadFunction() {
 	m_savingTask2 = new HexitecSavingTask(*m_cam.getSavingCtrlObj(), 2);
 
 	while (true) {
-		while (!m_cam.m_acq_started && !m_cam.m_quit) {
+		while (!m_cam.m_private->m_acq_started && !m_cam.m_private->m_quit) {
 			DEB_TRACE() << "AcqThread Waiting ";
-			m_cam.m_thread_running = false;
+			m_cam.m_private->m_thread_running = false;
 			AutoMutex lock(m_cam.m_cond.mutex());
 			m_cam.m_cond.wait();
 		}
 		auto t1 = Clock::now();
-		if (m_cam.m_quit) {
+		if (m_cam.m_private->m_quit) {
 			return;
 		}
 
-		m_cam.m_finished_saving = false;
-		m_cam.m_thread_running = true;
+		m_cam.m_private->m_finished_saving = false;
+		m_cam.m_private->m_thread_running = true;
 		m_cam.setStatus(Camera::Exposure);
 
 		bool continue_acq = true;
 		try {
-			m_cam.m_future_result.get();
+			m_cam.m_private->m_future_result.get();
 			DEB_ALWAYS() << "Starting acquisition";
-			rc = m_cam.m_hexitec->startAcq();
+			rc = m_cam.m_private->m_hexitec->startAcq();
 			if (rc != HexitecAPI::NO_ERROR) {
 				DEB_ERROR() << "Failed to start acquisition " << DEB_VAR1(rc);
 				m_cam.setHvBiasOff();
@@ -620,17 +644,17 @@ void Camera::AcqThread::threadFunction() {
 				m_cam.m_processType, m_cam.m_asicPitch, m_cam.m_binWidth, m_cam.m_speclen,
 				m_cam.m_lowThreshold, m_cam.m_highThreshold);
 		}
-		while (continue_acq && m_cam.m_acq_started && (!m_cam.m_nb_frames || m_cam.m_image_number < m_cam.m_nb_frames)) {
+		while (continue_acq && m_cam.m_private->m_acq_started && (!m_cam.m_nb_frames || m_cam.m_private->m_image_number < m_cam.m_nb_frames)) {
 
-			bptr = (uint16_t*) buffer_mgr.getFrameBufferPtr(m_cam.m_image_number);
-			DEB_TRACE() << "Retrieving image# " << m_cam.m_image_number << " in bptr " << (void*) bptr;
-			rc = m_cam.m_hexitec->retrieveBuffer((uint8_t*)bptr, m_cam.m_timeout);
+			bptr = (uint16_t*) buffer_mgr.getFrameBufferPtr(m_cam.m_private->m_image_number);
+			DEB_TRACE() << "Retrieving image# " << m_cam.m_private->m_image_number << " in bptr " << (void*) bptr;
+			rc = m_cam.m_private->m_hexitec->retrieveBuffer((uint8_t*)bptr, m_cam.m_timeout);
 			if (rc == HexitecAPI::NO_ERROR) {
 				if (m_cam.getStatus() == Camera::Exposure) {
 					Data srcData;
 					srcData.type = Data::UINT16;
 					srcData.dimensions = dimensions;
-					srcData.frameNumber = m_cam.m_image_number;
+					srcData.frameNumber = m_cam.m_private->m_image_number;
 
 					Buffer *fbuf = new Buffer(width*height*sizeof(uint16_t));
 					srcData.setBuffer(fbuf);
@@ -638,11 +662,11 @@ void Camera::AcqThread::threadFunction() {
 					memcpy(srcData.data(), bptr, width*height*sizeof(uint16_t));
 
 					if (saveOpt & Camera::SaveRaw) {
-						DEB_TRACE() << "Save raw frame " << m_cam.m_image_number;
+						DEB_TRACE() << "Save raw frame " << m_cam.m_private->m_image_number;
 						TaskMgr *taskMgr = new TaskMgr();
 						taskMgr->setLinkTask(0, m_savingTask0);
 						taskMgr->setInputData(srcData);
-						DEB_TRACE() << "Adding frame " << m_cam.m_image_number << " to task to pool (saving) ";
+						DEB_TRACE() << "Adding frame " << m_cam.m_private->m_image_number << " to task to pool (saving) ";
 						PoolThreadMgr::get().addProcess(taskMgr);
 					}
 					if (saveOpt & Camera::SaveProcessed || saveOpt & Camera::SaveHistogram) {
@@ -652,7 +676,7 @@ void Camera::AcqThread::threadFunction() {
 						Data concatData;
 						std::vector<int> concatDimensions;
 						uint16_t* bptr16;
-						concatData.frameNumber = m_cam.m_image_number;
+						concatData.frameNumber = m_cam.m_private->m_image_number;
 						concatDimensions.push_back(width);
 						concatDimensions.push_back(height);
 						concatDimensions.push_back(2);
@@ -666,43 +690,43 @@ void Camera::AcqThread::threadFunction() {
 						bptr16 += width*height;
 						memcpy(bptr16, m_lastFrame.data(),width*height*sizeof(uint16_t));
 
-						DEB_TRACE() << "Process raw frame " << m_cam.m_image_number << " and last frame " << m_lastFrame.frameNumber;
+						DEB_TRACE() << "Process raw frame " << m_cam.m_private->m_image_number << " and last frame " << m_lastFrame.frameNumber;
 						TaskMgr *taskMgr = new TaskMgr();
 						memcpy(m_lastFrame.data(), bptr,width*height*sizeof(uint16_t));
 						taskMgr->setLinkTask(1, processingTask);
 						taskMgr->setInputData(concatData);
-						DEB_TRACE() << "Adding frame " << m_cam.m_image_number << " to task to pool (proc) ";
+						DEB_TRACE() << "Adding frame " << m_cam.m_private->m_image_number << " to task to pool (proc) ";
 						PoolThreadMgr::get().addProcess(taskMgr);
 					}
-					DEB_TRACE() << "Image# " << m_cam.m_image_number << " acquired";
-					m_cam.m_image_number++;
+					DEB_TRACE() << "Image# " << m_cam.m_private->m_image_number << " acquired";
+					m_cam.m_private->m_image_number++;
 				} else {
 					std::this_thread::sleep_for(std::chrono::milliseconds(500));
 				}
 			} else if (rc == 27) {
-				DEB_WARNING() << "Skipping frame " << m_cam.m_hexitec->getErrorDescription() << " " << DEB_VAR1(rc);
+				DEB_WARNING() << "Skipping frame " << m_cam.m_private->m_hexitec->getErrorDescription() << " " << DEB_VAR1(rc);
 			} else {
-				DEB_ERROR() << "Retrieve error " << m_cam.m_hexitec->getErrorDescription() << " " << DEB_VAR1(rc);
+				DEB_ERROR() << "Retrieve error " << m_cam.m_private->m_hexitec->getErrorDescription() << " " << DEB_VAR1(rc);
 				break;
 			}
 		}
-		DEB_TRACE() << m_cam.m_image_number << " images acquired";
+		DEB_TRACE() << m_cam.m_private->m_image_number << " images acquired";
 		auto t2 = Clock::now();
 		DEB_TRACE() << "Delta t2-t1: " << std::chrono::duration_cast < std::chrono::nanoseconds
 				> (t2 - t1).count() << " nanoseconds";
 
 		DEB_ALWAYS() << "Stop acquisition";
-		auto rc2 = m_cam.m_hexitec->stopAcq();
+		auto rc2 = m_cam.m_private->m_hexitec->stopAcq();
 		if (rc2 != HexitecAPI::NO_ERROR) {
 			DEB_ERROR() << "Failed to stop acquisition " << DEB_VAR1(rc);
 		}
-		m_cam.m_acq_started = false;
+		m_cam.m_private->m_acq_started = false;
 		m_cam.setStatus(Camera::Readout);
 		DEB_TRACE() << "Setting bias off";
 		m_cam.setHvBiasOff();
 		DEB_ALWAYS() << "Check for outstanding processes";
 		if (saveOpt & Camera::SaveProcessed || saveOpt & Camera::SaveHistogram) {
-			while (processingTask->getNbProcessedFrames() < m_cam.m_image_number) {
+			while (processingTask->getNbProcessedFrames() < m_cam.m_private->m_image_number) {
 				DEB_TRACE() << "still processing " << processingTask->getNbProcessedFrames();
 				std::this_thread::sleep_for(std::chrono::milliseconds(1000));
 			}
@@ -715,7 +739,7 @@ void Camera::AcqThread::threadFunction() {
 			Data histData = processingTask->getGlobalHistogram();
 			taskMgr->setInputData(histData);
 			PoolThreadMgr::get().addProcess(taskMgr);
-			while (!m_cam.m_finished_saving) {
+			while (!m_cam.m_private->m_finished_saving) {
 				DEB_TRACE() << "still saving";
 				std::this_thread::sleep_for(std::chrono::milliseconds(1000));
 			}
@@ -747,7 +771,7 @@ Camera::TimerThread::TimerThread(Camera& cam) :
 Camera::TimerThread::~TimerThread() {
 	DEB_DESTRUCTOR();
 	AutoMutex lock(m_cam.m_cond.mutex());
-	m_cam.m_quit = true;
+	m_cam.m_private->m_quit = true;
 	m_cam.m_cond.broadcast();
 	lock.unlock();
 	DEB_TRACE()  << "Waiting for the timer thread to be done (joining the main thread)";
@@ -757,26 +781,26 @@ Camera::TimerThread::~TimerThread() {
 void Camera::TimerThread::threadFunction() {
 	DEB_MEMBER_FUNCT();
 
-	while (!m_cam.m_quit) {
-		while (!m_cam.m_acq_started && !m_cam.m_quit) {
+	while (!m_cam.m_private->m_quit) {
+		while (!m_cam.m_private->m_acq_started && !m_cam.m_private->m_quit) {
 			DEB_TRACE() << "Timer thread waiting";
 			AutoMutex lock(m_cam.m_cond.mutex());
 			m_cam.m_cond.wait();
 		}
 		DEB_TRACE() << "Timer thread Running";
-		if (m_cam.m_quit)
+		if (m_cam.m_private->m_quit)
 			return;
 
 		std::this_thread::sleep_for(std::chrono::milliseconds(m_cam.m_biasVoltageRefreshInterval));
-		if (m_cam.m_acq_started) {
+		if (m_cam.m_private->m_acq_started) {
 			m_cam.setStatus(Camera::Paused);
-			DEB_TRACE() << "Paused at frame " << DEB_VAR1(m_cam.m_image_number);
+			DEB_TRACE() << "Paused at frame " << DEB_VAR1(m_cam.m_private->m_image_number);
 			m_cam.setHvBiasOff();
 			std::this_thread::sleep_for(std::chrono::milliseconds(m_cam.m_biasVoltageRefreshTime));
 			m_cam.setHvBiasOn();
 			std::this_thread::sleep_for(std::chrono::milliseconds(m_cam.m_biasVoltageSettleTime));
 			m_cam.setStatus(Camera::Exposure);
-			DEB_TRACE() << "Acq status in timer after restart " << DEB_VAR1(m_cam.m_status);
+			DEB_TRACE() << "Acq status in timer after restart " << DEB_VAR1(m_cam.m_private->m_status);
 		}
 	}
 }
@@ -790,7 +814,7 @@ Camera::TaskEventCb::~TaskEventCb() {}
 
 void Camera::TaskEventCb::finished(Data& data) {
 	AutoMutex lock(m_cam.m_cond.mutex());
-	m_cam.m_finished_saving = true;
+	m_cam.m_private->m_finished_saving = true;
 }
 
 //-----------------------------------------------------
@@ -802,7 +826,7 @@ void Camera::TaskEventCb::finished(Data& data) {
 //-----------------------------------------------------------------------------
 void Camera::getEnvironmentalValues(Environment& env) {
 	DEB_MEMBER_FUNCT();
-	auto rc = m_hexitec->readEnvironmentValues(env.humidity, env.ambientTemperature, env.asicTemperature, env.adcTemperature,
+	auto rc = m_private->m_hexitec->readEnvironmentValues(env.humidity, env.ambientTemperature, env.asicTemperature, env.adcTemperature,
 			env.ntcTemperature);
 	if (rc != HexitecAPI::NO_ERROR) {
 		THROW_HW_ERROR(Error) << "Failed to read environmental values " << DEB_VAR1(rc);
@@ -814,7 +838,7 @@ void Camera::getEnvironmentalValues(Environment& env) {
 //-----------------------------------------------------------------------------
 void Camera::getOperatingValues(OperatingValues& opval) {
 	DEB_MEMBER_FUNCT();
-	auto rc = m_hexitec->readOperatingValues(opval.v3_3, opval.hvMon, opval.hvOut, opval.v1_2, opval.v1_8, opval.v3, opval.v2_5,
+	auto rc = m_private->m_hexitec->readOperatingValues(opval.v3_3, opval.hvMon, opval.hvOut, opval.v1_2, opval.v1_8, opval.v3, opval.v2_5,
 			opval.v3_3ln, opval.v1_65ln, opval.v1_8ana, opval.v3_8ana, opval.peltierCurrent, opval.ntcTemperature);
 	if (rc != HexitecAPI::NO_ERROR) {
 		THROW_HW_ERROR(Error) << "Failed to read operating values " << DEB_VAR1(rc);
@@ -835,7 +859,7 @@ void Camera::getCollectDcTimeout(int& timeout) {
 
 void Camera::collectOffsetValues() {
 	DEB_MEMBER_FUNCT();
-	auto rc = m_hexitec->collectOffsetValues(m_collectDcTimeout);
+	auto rc = m_private->m_hexitec->collectOffsetValues(m_collectDcTimeout);
 	if (rc != HexitecAPI::NO_ERROR) {
 		THROW_HW_ERROR(Error) << "Failed to collect offset values! " << DEB_VAR1(rc);
 	}
@@ -883,14 +907,14 @@ void Camera::getHighThreshold(int& threshold) {
 
 void Camera::setHvBiasOn() {
 	DEB_MEMBER_FUNCT();
-	auto rc = m_hexitec->setHvBiasOn(true);
+	auto rc = m_private->m_hexitec->setHvBiasOn(true);
 	if (rc != HexitecAPI::NO_ERROR) {
 		THROW_HW_ERROR(Error) << "Failed to set HV Bias on " << DEB_VAR1(rc);
 	}
 }
 void Camera::setHvBiasOff() {
 	DEB_MEMBER_FUNCT();
-	auto rc = m_hexitec->setHvBiasOn(false);
+	auto rc = m_private->m_hexitec->setHvBiasOn(false);
 	if (rc != HexitecAPI::NO_ERROR) {
 		THROW_HW_ERROR(Error) << "Failed to turn HV Bias off" << DEB_VAR1(rc);
 	}

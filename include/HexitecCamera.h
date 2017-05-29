@@ -28,11 +28,13 @@
 #include <atomic>
 #include "lima/HwBufferMgr.h"
 #include "lima/HwMaxImageSizeCallback.h"
-#ifndef SIPCOMPILATION
-#include <HexitecApi.h>
-#endif
 #include <HexitecSavingCtrlObj.h>
 #include <HexitecSavingTask.h>
+
+namespace HexitecAPI
+{
+  class HexitecApi;
+}
 
 namespace lima {
 namespace Hexitec {
@@ -154,30 +156,22 @@ public:
 	void getBiasVoltageRefreshTime(int& millis);
 	void getBiasVoltageSettleTime(int& millis);
 
-#ifndef SIPCOMPILATION
-
 private:
 	class AcqThread;
 	class TimerThread;
 	class TaskEventCb;
-
+	
+	struct Private;
+	std::shared_ptr<Private> m_private;
+	
 	// Buffer control object
 	SoftBufferCtrlObj* m_bufferCtrlObj;
 	// Saving control object
 	SavingCtrlObj* m_savingCtrlObj;
 
-	std::unique_ptr<AcqThread> m_acq_thread;
-	std::unique_ptr<TimerThread> m_timer_thread;
-	std::unique_ptr<HexitecAPI::HexitecApi> m_hexitec;
 
 	Cond m_cond;
 	Cond m_cond_saving;
-	std::atomic<bool> m_quit;
-	std::atomic<bool> m_acq_started;
-	std::atomic<bool> m_thread_running;
-	std::atomic<bool> m_finished_saving;
-	std::atomic<int> m_image_number;
-	std::atomic<int> m_status;
 
 	ImageType m_detectorImageType;
 	std::string m_detector_type;
@@ -209,9 +203,7 @@ private:
 	int m_biasVoltageRefreshInterval;
 	int m_biasVoltageRefreshTime;
 	int m_biasVoltageSettleTime;
-	std::future<void> m_future_result;
 	int m_saveOpt;
-#endif
 };
 } // namespace Hexitec
 } // namespace lima

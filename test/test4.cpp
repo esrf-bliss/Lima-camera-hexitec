@@ -100,7 +100,7 @@ int main() {
 		stream = 0;
 		saving->setSavingMode(CtSaving::Manual);
 		saving->setManagedMode(CtSaving::Hardware);
-		saving->setDirectory("/home/grm84/data/raw", stream);
+		saving->setDirectory("/buffer/dubble321/blissadm/dev/data/raw", stream);
 		saving->setFormat(CtSaving::HDF5, stream);
 		saving->setSuffix(".hdf", stream);
 		saving->setPrefix("hexitec_", stream);
@@ -110,7 +110,7 @@ int main() {
 // for processed data stream 1
 		stream = 1;
 		saving->setStreamActive(stream, true);
-		saving->setDirectory("/home/grm84/data/processed", stream);
+		saving->setDirectory("/buffer/dubble321/blissadm/dev/data/processed", stream);
 		saving->setFormat(CtSaving::HDF5, stream);
 		saving->setSuffix(".hdf", stream);
 		saving->setPrefix("hexitec_", stream);
@@ -120,7 +120,7 @@ int main() {
 		// for processed data stream 2
 		stream = 2;
 		saving->setStreamActive(stream, true);
-		saving->setDirectory("/home/grm84/data/histogram", stream);
+		saving->setDirectory("/buffer/dubble321/blissadm/dev/data/histogram", stream);
 		saving->setFormat(CtSaving::HDF5, stream);
 		saving->setSuffix(".hdf", stream);
 		saving->setPrefix("hexitec_", stream);

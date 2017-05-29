@@ -26,10 +26,13 @@
 #include "lima/HwInterface.h"
 #include <vector>
 #include <memory>
-#ifndef SIPCOMPILATION
-#include "H5Cpp.h"
-#endif
 
+namespace H5 {
+	class H5File;
+	class Group;
+	class DataSet;
+	class DataSpace;
+}
 namespace lima {
 namespace Hexitec {
 
@@ -86,14 +89,12 @@ public:
 		std::string m_index_format;
 		std::string m_overwritePolicy;
 		long m_frames_per_file;
-#ifndef SIPCOMPILATION
 		H5::H5File *m_file;
 		H5::Group *m_entry;
 		H5::Group *m_measurement_detector;
 		H5::Group *m_instrument_detector;
 		H5::DataSet *m_image_dataset;
 		H5::DataSpace *m_image_dataspace;
-#endif
 	};
 
 	void getPossibleSaveFormat(std::list<std::string> &format_list) const;
