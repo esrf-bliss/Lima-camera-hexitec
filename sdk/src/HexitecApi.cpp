@@ -90,13 +90,6 @@ int32_t HexitecApi::readConfiguration(std::string fname) {
 	rowPwrStr += reader.Get(section, "RowPwr4thBlock", "");
 	rowCalStr += reader.Get(section, "RowCal4thBlock", "");
 
-//	std::cout << colEnbStr << std::endl;
-//	std::cout << colPwrStr << std::endl;
-//	std::cout << colCalStr << std::endl;
-//	std::cout << rowEnbStr << std::endl;
-//	std::cout << rowPwrStr << std::endl;
-//	std::cout << rowCalStr << std::endl;
-
 	int idx = 0;
 	for (auto i=0; i<10; i++, idx+= 8) {
 		m_sensorConfig.SetupCol.ReadEn[i] = pack(colEnbStr, idx);
@@ -138,13 +131,12 @@ int32_t HexitecApi::getFramesAcquired() {
 	return gigeDevice->GetAcquiredImageCount();
 }
 
-int32_t HexitecApi::startAcquisition() {
-	std::cout << "in hexitec start acquisition " << std::endl;
-	return gigeDevice->startAcquisition();
+int32_t HexitecApi::startAcq() {
+	return gigeDevice->startAcq();
 }
 
-int32_t HexitecApi::stopAcquisition() {
-	return gigeDevice->stopAcquisition();
+int32_t HexitecApi::stopAcq() {
+	return gigeDevice->stopAcq();
 }
 
 int32_t HexitecApi::setHvBiasOn(bool onOff) {
@@ -160,22 +152,18 @@ int32_t HexitecApi::setHvBiasOn(bool onOff) {
  * @param [IN] frametimeout time in milliseconds to wait for frame to complete
  */
 int32_t HexitecApi::retrieveBuffer(uint8_t* buffer, uint32_t frametimeout) {
-//	std::cout << "in hexitec retrieve buffer " << frametimeout << std::endl;
 	int32_t rc = gigeDevice->retrieveBuffer(buffer, frametimeout);
-//	std::cout << "in hexitec returns " << rc << std::endl;
 	return rc;
 }
 
-/**
- * @deprecated
- */
+int32_t HexitecApi::openSerialPortBulk0(uint32_t rxBufferSize, uint8_t useTermChar, uint8_t termChar) {
+	return gigeDevice->OpenSerialPort(PvDeviceSerialBulk0, rxBufferSize, useTermChar, termChar);
+}
+
 int32_t HexitecApi::acquireFrame(uint32_t& frameCount, uint8_t* buffer, uint32_t frametimeout) {
 	return gigeDevice->AcquireImage(&frameCount, buffer, frametimeout);
 }
 
-/**
- *  @Deprecated
- */
 int32_t HexitecApi::acquireFrames(uint32_t frameCount, uint64_t& framesAcquired, uint32_t frametimeout) {
 	int32_t result = gigeDevice->AcquireImageThread(frameCount, frametimeout);
 	framesAcquired = gigeDevice->GetAcquiredImageCount();
@@ -195,17 +183,6 @@ int32_t HexitecApi::checkFirmware(uint8_t& customerId, uint8_t& projectId, uint8
 	if (result == NO_ERROR) {
 		result = readRegister(FPGA_FW_CHECK_VERSION_REG, version);
 	}
-//	if ((result == NO_ERROR) && (requiredCustomerId != customerId)) {
-//		result = FPGA_FW_CHECK_CUSTOMER_ERROR;
-//	}
-//	if ((result == NO_ERROR) && (requiredProjectId != projectId)) {
-//		result = FPGA_FW_CHECK_PROJECT_ERROR;
-//	}
-//	if ((result == NO_ERROR) && forceEqualVersion && (requiredVersion != version)) {
-//		result = FPGA_FW_CHECK_VERSION_ERROR;
-//	} else if ((result == NO_ERROR) && (requiredVersion > version)) {
-//		result = FPGA_FW_CHECK_VERSION_ERROR;
-//	}
 	return result;
 }
 
@@ -318,14 +295,17 @@ int32_t HexitecApi::configureDetector(uint8_t& width, uint8_t& height, double& f
 		result = writeAdcRegister(0x16, value);
 	}
 	if (result == NO_ERROR) {
-		result = setDAC(m_sensorConfig.Vcal, m_systemConfig.Umid, m_biasConfig.RefreshVoltage, m_systemConfig.DetCtrl, m_systemConfig.TargetTemperature);
-	}
-	if (result == NO_ERROR) {
 		result = readResolution(width, height);
 	}
 	if (result == NO_ERROR) {
 		frameTime = getFrameTime(width, height);
 		collectDcTime = getCollectDcTime(frameTime);
+		gigeDevice->SetFrameTime(frameTime);
+		gigeDevice->SetFrameTimeOut((u32)((frameTime*1000*HEXITEC_FRAME_TIMEOUT_MULTIPLIER)+1));
+	}
+	if ((result == NO_ERROR) && (m_operationMode.enSyncMode))
+	{
+		result = enableSyncMode();
 	}
 	return result;
 }
@@ -339,12 +319,50 @@ int32_t HexitecApi::createPipeline(uint32_t bufferCount, uint32_t transferBuffer
 	return gigeDevice->CreatePipeline(bufferCount);
 }
 
+int32_t HexitecApi::createPipelineOld(u32 bufferCount) {
+	return  gigeDevice->CreatePipeline( bufferCount );
+}
+
 int32_t HexitecApi::disableSM() {
 	uint8_t value = CONTROL_DISABLED;
 	return writeRegister(0x01, value);
 }
 
 int32_t HexitecApi::disableSyncMode() {
+	uint8_t txBuffer[8];
+	uint8_t rxBuffer[7];
+	uint32_t bytesWritten = 0;
+	uint32_t bytesRead = 0;
+
+	txBuffer[0] = 0x23;
+	txBuffer[1] = MODULE_ADDRESS;
+	txBuffer[2] = 0x43;
+	txBuffer[3] = 0x30;
+	txBuffer[4] = 0x41;
+	txBuffer[5] = 0x30;
+	txBuffer[6] = 0x31;
+	txBuffer[7] = 0x0d;
+	return serialPortWriteRead(txBuffer, sizeof(txBuffer), bytesWritten, rxBuffer, sizeof(rxBuffer), bytesRead);
+}
+
+int32_t HexitecApi::disableTriggerGate() {
+	uint8_t txBuffer[8];
+	uint8_t rxBuffer[7];
+	uint32_t bytesWritten = 0;
+	uint32_t bytesRead = 0;
+
+	txBuffer[0] = 0x23;
+	txBuffer[1] = MODULE_ADDRESS;
+	txBuffer[2] = 0x43;
+	txBuffer[3] = 0x30;
+	txBuffer[4] = 0x41;
+	txBuffer[5] = 0x30;
+	txBuffer[6] = 0x34;
+	txBuffer[7] = 0x0d;
+	return serialPortWriteRead(txBuffer, sizeof(txBuffer), bytesWritten, rxBuffer, sizeof(rxBuffer), bytesRead);
+}
+
+int32_t HexitecApi::disableTriggerMode() {
 	uint8_t txBuffer[8];
 	uint8_t rxBuffer[7];
 	uint32_t bytesWritten = 0;
@@ -357,27 +375,18 @@ int32_t HexitecApi::disableSyncMode() {
 	txBuffer[3] = 0x30;
 	txBuffer[4] = 0x41;
 	txBuffer[5] = 0x30;
-	txBuffer[6] = 0x31;
-	txBuffer[7] = 0x0d;
-	result = serialPortWriteRead(txBuffer, sizeof(txBuffer), bytesWritten, rxBuffer, sizeof(rxBuffer), bytesRead);
-	return result;
-}
-
-int32_t HexitecApi::disableTriggerMode() {
-	uint8_t txBuffer[8];
-	uint8_t rxBuffer[7];
-	uint32_t bytesWritten = 0;
-	uint32_t bytesRead = 0;
-
-	txBuffer[0] = 0x23;
-	txBuffer[1] = MODULE_ADDRESS;
-	txBuffer[2] = 0x43;
-	txBuffer[3] = 0x30;
-	txBuffer[4] = 0x41;
-	txBuffer[5] = 0x30;
 	txBuffer[6] = 0x32;
 	txBuffer[7] = 0x0d;
-	return serialPortWriteRead(txBuffer, sizeof(txBuffer), bytesWritten, rxBuffer, sizeof(rxBuffer), bytesRead);
+	result = serialPortWriteRead(txBuffer, sizeof(txBuffer), bytesWritten, rxBuffer, sizeof(rxBuffer), bytesRead);
+	if (result == NO_ERROR) {
+		std::shared_ptr<AcqArmedCallback> cbk = std::shared_ptr<AcqArmedCallback>(nullptr);
+		gigeDevice->RegisterAcqArmedCallBack(cbk);
+	}
+	if (result == NO_ERROR) {
+		std::shared_ptr<AcqFinishCallback> cbk = std::shared_ptr<AcqFinishCallback>(nullptr);
+		gigeDevice->RegisterAcqFinishCallBack(cbk);
+	}
+	return result;
 }
 
 int32_t HexitecApi::enableFunctionBlocks(Control adcEnable, Control dacEnable, Control peltierEnable) {
@@ -418,7 +427,7 @@ int32_t HexitecApi::enableSyncMode() {
 	return serialPortWriteRead(txBuffer, sizeof(txBuffer), bytesWritten, rxBuffer, sizeof(rxBuffer), bytesRead);
 }
 
-int32_t HexitecApi::enableTriggerMode() {
+i32 HexitecApi::enableTriggerGate() {
 	uint8_t txBuffer[8];
 	uint8_t rxBuffer[7];
 	uint32_t bytesWritten = 0;
@@ -430,32 +439,82 @@ int32_t HexitecApi::enableTriggerMode() {
 	txBuffer[3] = 0x30;
 	txBuffer[4] = 0x41;
 	txBuffer[5] = 0x30;
-	txBuffer[6] = 0x32;
+	txBuffer[6] = 0x34;
 	txBuffer[7] = 0x0d;
 	return serialPortWriteRead(txBuffer, sizeof(txBuffer), bytesWritten, rxBuffer, sizeof(rxBuffer), bytesRead);
 }
 
-//int32_t HexitecApi::getErrorMsg(int32_t asError, char* errorMsg, uint32_t length) {
-//	hdl ghResDll = NULL;
-//	int32_t charCnt = 0;
-//	int32_t lAsError = asError;
-//	int32_t* pArgs[] = { &lAsError };
-//
-//	if (asErrorMsg != NULL) {
-//		ghResDll = LoadLibrary(MESSAGE_DLL);
-//		if (ghResDll != NULL) {
-//			charCnt = FormatMessageA(FORMAT_MESSAGE_FROM_HMODULE, ghResDll, lAsError, 0, asErrorMsg, length, (va_list*) pArgs);
-//			FreeLibrary((HMODULE) ghResDll);
-//		}
-//		if ((ghResDll == NULL) || (charCnt == 0)) {
-//			return GetLastError();
-//		}
-//	}
-//	return NO_ERROR;
-//}
+int32_t HexitecApi::enableTriggerMode() {
+	uint8_t txBuffer[8];
+	uint8_t rxBuffer[7];
+	uint32_t bytesWritten = 0;
+	uint32_t bytesRead = 0;
+	int32_t	result = NO_ERROR;
 
-int32_t HexitecApi::getDeviceInformation(GigEDeviceInfoStr& deviceInfoStr) {
-	deviceInfoStr = gigeDevice->GetDeviceInfoStr();
+	txBuffer[0] = 0x23;
+	txBuffer[1] = MODULE_ADDRESS;
+	txBuffer[2] = 0x42;
+	txBuffer[3] = 0x30;
+	txBuffer[4] = 0x41;
+	txBuffer[5] = 0x30;
+	txBuffer[6] = 0x32;
+	txBuffer[7] = 0x0d;
+	result = serialPortWriteRead(txBuffer, sizeof(txBuffer), bytesWritten, rxBuffer, sizeof(rxBuffer), bytesRead);
+	if (result == NO_ERROR) {
+		std::shared_ptr<AcqArmedCallback> cbk = std::shared_ptr<AcqArmedCallback>(new HexitecApi::HexitecArmedCb(*this));
+		gigeDevice->RegisterAcqArmedCallBack(cbk);
+	}
+	if (result == NO_ERROR) {
+		std::shared_ptr<AcqFinishCallback> cbk = std::shared_ptr<AcqFinishCallback>(new HexitecFinishCb(*this));
+		gigeDevice->RegisterAcqFinishCallBack(cbk);
+	}
+
+	return result;
+}
+
+int32_t HexitecApi::exitDevice() {
+	delete gigeDevice;
+	return NO_ERROR;
+}
+
+#ifndef __linux__
+int32_t HexitecApi::getErrorMsg(int32_t asError, char* errorMsg, uint32_t length) {
+	hdl ghResDll = NULL;
+	int32_t charCnt = 0;
+	int32_t lAsError = asError;
+	int32_t* pArgs[] = { &lAsError };
+
+	if (asErrorMsg != NULL) {
+		ghResDll = LoadLibrary(MESSAGE_DLL);
+		if (ghResDll != NULL) {
+			charCnt = FormatMessageA(FORMAT_MESSAGE_FROM_HMODULE, ghResDll, lAsError, 0, asErrorMsg, length, (va_list*) pArgs);
+			FreeLibrary((HMODULE) ghResDll);
+		}
+		if ((ghResDll == NULL) || (charCnt == 0)) {
+			return GetLastError();
+		}
+	}
+	return NO_ERROR;
+}
+#endif
+
+int32_t HexitecApi::getBufferHandlingThreadPriority(int32_t& priority )
+{
+	priority = gigeDevice->GetBufferHandlingThreadPriority();
+	return NO_ERROR;
+}
+
+int32_t HexitecApi::getDeviceInformation(HexitecDeviceInfo& deviceInfo) {
+	GigEDeviceInfoStr deviceInfoStr = gigeDevice->GetDeviceInfoStr();
+	deviceInfo.Vendor = deviceInfoStr.Vendor;
+	deviceInfo.Model = deviceInfoStr.Model;
+	deviceInfo.ManufacturerInfo = deviceInfoStr.ManufacturerInfo;
+	deviceInfo.SerialNumber = deviceInfoStr.SerialNumber;
+	deviceInfo.UserId = deviceInfoStr.UserId;
+	deviceInfo.MacAddress = deviceInfoStr.MacAddress;
+	deviceInfo.IpAddress = deviceInfoStr.IpAddress;
+	deviceInfo.NetMask = deviceInfoStr.NetMask;
+	deviceInfo.GateWay = deviceInfoStr.GateWay;
 	return NO_ERROR;
 }
 
@@ -469,7 +528,7 @@ double HexitecApi::getFrameTime(uint8_t width, uint8_t height) {
 }
 
 int32_t HexitecApi::getIntegerValue(const std::string propertyName, int64_t& value) {
-	return gigeDevice->GetIntegerValue(propertyName.c_str(), value);
+	return gigeDevice->GetIntegerValue(const_cast<char*>(propertyName.c_str()), value);
 }
 
 int32_t HexitecApi::getLastResult(uint32_t& internalErrorCode, std::string errorCodeString, std::string errorDescription) {
@@ -608,18 +667,19 @@ int32_t HexitecApi::getSensorConfig(HexitecSensorConfig& sensorConfig) {
 	return result;
 }
 
-//int32_t HexitecApi::getSystemErrorMsg(int32_t sysError, char* sysErrorMsg, uint32_t length) {
-//	int32_t charCnt = 0;
-//
-//	if (sysErrorMsg != NULL) {
-//		charCnt = FormatMessageA(FORMAT_MESSAGE_FROM_SYSTEM, NULL, sysError, 0, sysErrorMsg, length, NULL);
-//		if (charCnt == 0) {
-//			return GetLastError();
-//		}
-//	}
-//	return NO_ERROR;
-//}
+#ifndef __linux__
+int32_t HexitecApi::getSystemErrorMsg(int32_t sysError, char* sysErrorMsg, uint32_t length) {
+	int32_t charCnt = 0;
 
+	if (sysErrorMsg != NULL) {
+		charCnt = FormatMessageA(FORMAT_MESSAGE_FROM_SYSTEM, NULL, sysError, 0, sysErrorMsg, length, NULL);
+		if (charCnt == 0) {
+			return GetLastError();
+		}
+	}
+	return NO_ERROR;
+}
+#endif
 
 int32_t HexitecApi::getTriggerState(uint8_t& trigger1, uint8_t& trigger2, uint8_t& trigger3) {
 	int32_t result = NO_ERROR;
@@ -645,7 +705,7 @@ int32_t HexitecApi::initDevice(uint32_t& internalErrorCode, std::string& errorCo
 	char pleoraErrorDescription[255];
 	uint32_t pleoraErrorDescriptionLen = 255;
 
-	gigeDevice = new GigEDevice(m_deviceDescriptor.c_str());
+	gigeDevice = new GigEDevice(const_cast<char*>(m_deviceDescriptor.c_str()));
 	pvResult = gigeDevice->GetLastResult();
 	internalErrorCode = pvResult.GetCode();
 	gigeDevice->GetErrorDescription(pvResult, pleoraErrorCodeString, &pleoraErrorCodeStringLen, pleoraErrorDescription,
@@ -697,12 +757,8 @@ int32_t HexitecApi::initFwDefaults(uint8_t setHv, double& hvSetPoint, uint8_t wi
 	return result;
 }
 
-int32_t HexitecApi::openSerialPort(PvDeviceSerial serialPort, uint32_t rxBufferSize, uint8_t useTermChar, uint8_t termChar) {
-	return gigeDevice->OpenSerialPort(serialPort, rxBufferSize, useTermChar, termChar);
-}
-
 int32_t HexitecApi::openStream() {
-	return gigeDevice->OpenStream();
+	return gigeDevice->OpenStream(true, true);
 }
 
 int32_t HexitecApi::readEnvironmentValues(double& humidity, double& ambientTemperature, double& asicTemperature,
@@ -772,11 +828,7 @@ int32_t HexitecApi::readRegister(uint8_t registerAddress, uint8_t& value) {
 	txBuffer[2] = 0x41;
 	hexToString(registerAddress, 2, &txBuffer[3]);
 	txBuffer[5] = 0x0d;
-//	std::cout << "txbuffer: " << txBuffer << std::endl;
 	result = serialPortWriteRead(txBuffer, sizeof(txBuffer), bytesWritten, rxBuffer, sizeof(rxBuffer), bytesRead);
-//	std::cout << "result :" << result << std::endl;
-//	std::cout << " bytes read " << bytesRead << std::endl;
-//	std::cout << "rxbuffer: " << rxBuffer << std::endl;
 	value = (uint8_t) stringToHex(&rxBuffer[2], 2);
 	return result;
 }
@@ -792,11 +844,6 @@ int32_t HexitecApi::readResolution(uint8_t& width, uint8_t& height) {
 	return result;
 }
 
-int32_t HexitecApi::registerTransferBufferReadyCallBack(p_bufferCallBack transferBufferReadyCallBack) {
-	gigeDevice->RegisterTransferBufferReadyCallBack(transferBufferReadyCallBack);
-	return NO_ERROR;
-}
-
 int32_t HexitecApi::returnBuffer(uint8_t* transferBuffer) {
 	gigeDevice->ReturnBuffer(transferBuffer);
 	return NO_ERROR;
@@ -809,13 +856,11 @@ int32_t HexitecApi::serialPortWriteRead(const uint8_t* txBuffer, uint32_t txBuff
 	if (txBufferSize) {
 		result = gigeDevice->FlushRxBuffer();
 		if (result == NO_ERROR) {
-			result = gigeDevice->WriteSerialPort(txBuffer, txBufferSize, &bytesWritten);
-//			std::cout << "serialPortWriteRead() write result " << result << std::endl;
+			result = gigeDevice->WriteSerialPort(const_cast<uint8_t*>(txBuffer), txBufferSize, &bytesWritten);
 		}
 	}
 	if ((result == NO_ERROR) && rxBufferSize) {
 		result = gigeDevice->ReadSerialPort(rxBuffer, rxBufferSize, &bytesRead, m_timeout);
-//		std::cout << "serialPortWriteRead() read result " << result << std::endl;
 	}
 	return result;
 }
@@ -827,29 +872,38 @@ int32_t HexitecApi::setDAC(double& vCal, double& uMid, double& hvSetPoint, doubl
 	uint32_t bytesRead = 0;
 	int32_t result = NO_ERROR;
 
-	txBuffer[0] = 0x23;
-	txBuffer[1] = MODULE_ADDRESS;
-	txBuffer[2] = 0x54;
-	hexToString((uint32_t) dacValFromVoltage(vCal), 4, &txBuffer[3]);
-	hexToString((uint32_t) dacValFromVoltage(uMid), 4, &txBuffer[7]);
-	hexToString((uint32_t) hvDacValFromHv(hvSetPoint), 4, &txBuffer[11]);
-	hexToString((uint32_t) dacValFromVoltage(detCtrl), 4, &txBuffer[15]);
-	hexToString((uint32_t) temperatureDacValFromTemperature(targetTemperature), 4, &txBuffer[19]);
-	txBuffer[23] = 0x0d;
-	result = serialPortWriteRead(txBuffer, sizeof(txBuffer), bytesWritten, rxBuffer, sizeof(rxBuffer), bytesRead);
+	result = checkTemperatureLimit(targetTemperature);
+	if (result == NO_ERROR) {
+		txBuffer[0] = 0x23;
+		txBuffer[1] = MODULE_ADDRESS;
+		txBuffer[2] = 0x54;
+		hexToString((uint32_t) dacValFromVoltage(vCal), 4, &txBuffer[3]);
+		hexToString((uint32_t) dacValFromVoltage(uMid), 4, &txBuffer[7]);
+		hexToString((uint32_t) hvDacValFromHv(hvSetPoint), 4, &txBuffer[11]);
+		hexToString((uint32_t) dacValFromVoltage(detCtrl), 4, &txBuffer[15]);
+		hexToString((uint32_t) temperatureDacValFromTemperature(targetTemperature), 4, &txBuffer[19]);
+		txBuffer[23] = 0x0d;
+		result = serialPortWriteRead(txBuffer, sizeof(txBuffer), bytesWritten, rxBuffer, sizeof(rxBuffer), bytesRead);
 
-	vCal = dacValToVoltage((uint16_t) stringToHex(&rxBuffer[2], 4));
-	uMid = dacValToVoltage((uint16_t) stringToHex(&rxBuffer[6], 4));
-	hvSetPoint = hvDacValToHv((uint16_t) stringToHex(&rxBuffer[10], 4));
-	detCtrl = dacValToVoltage((uint16_t) stringToHex(&rxBuffer[14], 4));
-	targetTemperature = temperatureDacValToTemperature((uint16_t) stringToHex(&rxBuffer[18], 4), DAC_REF_VOLTAGE);
-
+		vCal = dacValToVoltage((uint16_t) stringToHex(&rxBuffer[2], 4));
+		uMid = dacValToVoltage((uint16_t) stringToHex(&rxBuffer[6], 4));
+		hvSetPoint = hvDacValToHv((uint16_t) stringToHex(&rxBuffer[10], 4));
+		detCtrl = dacValToVoltage((uint16_t) stringToHex(&rxBuffer[14], 4));
+		targetTemperature = temperatureDacValToTemperature((uint16_t) stringToHex(&rxBuffer[18], 4), DAC_REF_VOLTAGE);
+	}
 	return result;
 }
 
-int32_t HexitecApi::setFrameFormatControl(const std::string pixelFormat, uint64_t width, uint64_t height, uint64_t offsetX,
-		uint64_t offsetY, const std::string sensorTaps, const std::string testPattern) {
-	return gigeDevice->SetImageFormatControl(pixelFormat.c_str(), width, height, offsetX, offsetY, sensorTaps.c_str(), testPattern.c_str());
+int32_t HexitecApi::setFrameFormatControl(const std::string& pixelFormat, uint64_t width, uint64_t height, uint64_t offsetX,
+		uint64_t offsetY, const std::string& sensorTaps, const std::string& testPattern) {
+	return gigeDevice->SetImageFormatControl(const_cast<char*>(pixelFormat.c_str()), width, height, offsetX, offsetY,
+			const_cast<char*>(sensorTaps.c_str()), const_cast<char*>(testPattern.c_str()));
+}
+
+int32_t HexitecApi::setFrameTimeOut(uint32_t frameTimeOut)
+{
+	gigeDevice->SetFrameTimeOut(frameTimeOut);
+	return NO_ERROR;
 }
 
 int32_t HexitecApi::setTriggeredFrameCount(uint32_t frameCount) {
@@ -869,6 +923,10 @@ int32_t HexitecApi::setTriggeredFrameCount(uint32_t frameCount) {
 	return serialPortWriteRead(txBuffer, sizeof(txBuffer), bytesWritten, rxBuffer, sizeof(rxBuffer), bytesRead);
 }
 
+int32_t HexitecApi::stopAcquisition() {
+	gigeDevice->StopAcquisition();
+	return NO_ERROR;
+}
 
 int32_t HexitecApi::uploadOffsetValues(Reg2Byte* offsetValues, uint32_t offsetValuesLength) {
 	int32_t result = NO_ERROR;
@@ -880,7 +938,9 @@ int32_t HexitecApi::uploadOffsetValues(Reg2Byte* offsetValues, uint32_t offsetVa
 	uint32_t i = 0;
 	uint32_t regsWritten = 0;
 
-	result = getOperationMode(currentMode);
+	if (result == NO_ERROR) {
+		result = getOperationMode(currentMode);
+	}
 	if (result == NO_ERROR) {
 		uploadMode = currentMode;
 		uploadMode.DcCollectDarkCorrectionValues = Control::CONTROL_DISABLED;
@@ -950,9 +1010,7 @@ int32_t HexitecApi::writeRegister(uint8_t registerAddress, uint8_t& value) {
 	hexToString(registerAddress, 2, &txBuffer[3]);
 	hexToString(value, 2, &txBuffer[5]);
 	txBuffer[7] = 0x0d;
-//	std::cout << "writeRegister() txbuffer: " << txBuffer << std::endl;
 	result = serialPortWriteRead(txBuffer,sizeof(txBuffer), bytesWritten, rxBuffer, sizeof(rxBuffer), bytesRead);
-//	std::cout << "writeRegister() rxbuffer: " << rxBuffer << std::endl;
 	value = (uint8_t) stringToHex(&rxBuffer[4], 2);
 	return result;
 }
@@ -981,7 +1039,6 @@ int32_t HexitecApi::writeRegisterStream(FpgaRegisterVector &registerStream) {
 	}
 	txBuffer[index] = 0x0d;
 	result = serialPortWriteRead(txBuffer, tsz, bytesWritten, rxBuffer, rsz, bytesRead);
-	std::cout << "writeRegister() write result " << result << std::endl;
 	if (bytesRead >= rsz) {
 		int j = 4;
 		for (auto i = 0; i < registerStream.size(); i++, j+=4) {
@@ -990,6 +1047,41 @@ int32_t HexitecApi::writeRegisterStream(FpgaRegisterVector &registerStream) {
 	}
 	return result;
 }
+
+int32_t HexitecApi::checkTemperatureLimit(double& temperature) {
+	uint8_t txBuffer[4];
+	uint8_t rxBuffer[83];
+	uint32_t bytesWritten = 0;
+	uint32_t bytesRead = 0;
+	int32_t result = NO_ERROR;
+	uint32_t detectorType = 0xff;
+
+	txBuffer[0] = 0x23;
+	txBuffer[1] = MODULE_ADDRESS;
+	txBuffer[2] = 0x70;
+	txBuffer[3] = 0x0d;
+	result = serialPortWriteRead(txBuffer, sizeof(txBuffer), bytesWritten, rxBuffer, sizeof(rxBuffer), bytesRead);
+
+	detectorType = stringToHex(&rxBuffer[2], 4);
+	switch (detectorType)
+	{
+		case 0x00:
+			if( temperature < HEXITEC_TARGET_TEMPERATURE_LL_0x00) {
+				temperature = HEXITEC_TARGET_TEMPERATURE_LL_0x00;
+			}
+			break;
+		default:
+			if (temperature < HEXITEC_TARGET_TEMPERATURE_LL) {
+				temperature = HEXITEC_TARGET_TEMPERATURE_LL;
+			}
+			break;
+	}
+	if (temperature > HEXITEC_TARGET_TEMPERATURE_UL) {
+		temperature = HEXITEC_TARGET_TEMPERATURE_UL;
+	}
+	return result;
+}
+
 int32_t HexitecApi::setOperationMode(HexitecOperationMode operationMode) {
 	uint8_t value = 0;
 	int32_t result = NO_ERROR;
@@ -1225,14 +1317,7 @@ uint32_t HexitecApi::stringToHex(const uint8_t* source, uint8_t digits) {
 }
 
 uint16_t HexitecApi::temperatureDacValFromTemperature(double temperature) {
-	double lTemperature = temperature;
-
-	if (lTemperature < HEXITEC_TARGET_TEMPERATURE_LL) {
-		lTemperature = HEXITEC_TARGET_TEMPERATURE_LL;
-	} else if (lTemperature > HEXITEC_TARGET_TEMPERATURE_UL) {
-		lTemperature = HEXITEC_TARGET_TEMPERATURE_UL;
-	}
-	double temperatureConvertedExp = exp(((1 / ((double) lTemperature + 273.15)) - (1 / 298.15)) * 3988);
+	double temperatureConvertedExp = exp(((1 / ((double) temperature + 273.15)) - (1 / 298.15)) * 3988);
 	double temperatureConverted = (temperatureConvertedExp * 3) / (temperatureConvertedExp + 1);
 	double dacStepVoltage = DAC_REF_VOLTAGE / 4095;
 	if (temperatureConverted < 0) {
@@ -1249,4 +1334,15 @@ double HexitecApi::temperatureDacValToTemperature(uint16_t number, double intern
 	return (1 / ((term_ln / 3988) + (1 / 298.15))) - 273.15;
 }
 
+HexitecApi::HexitecArmedCb::HexitecArmedCb(HexitecApi& api) : m_api(api) {}
+HexitecApi::HexitecArmedCb::~HexitecArmedCb() {}
+void HexitecApi::HexitecArmedCb::armed() {
+	m_api.enableTriggerGate();
+}
+
+HexitecApi::HexitecFinishCb::HexitecFinishCb(HexitecApi& api) : m_api(api) {}
+HexitecApi::HexitecFinishCb::~HexitecFinishCb() {}
+void HexitecApi::HexitecFinishCb::finished() {
+	m_api.disableTriggerGate();
+}
 

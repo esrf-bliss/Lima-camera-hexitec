@@ -1,0 +1,39 @@
+==26673== 
+==26673== HEAP SUMMARY:
+==26673==     in use at exit: 7,450 bytes in 126 blocks
+==26673==   total heap usage: 2,501,057 allocs, 2,500,931 frees, 3,360,519,358 bytes allocated
+==26673== 
+==26673== 248 bytes in 1 blocks are definitely lost in loss record 93 of 100
+==26673==    at 0x4C28203: operator new(unsigned long) (vg_replace_malloc.c:334)
+==26673==    by 0x416C99: lima::Hexitec::Camera::AcqThread::threadFunction() (HexitecCamera.cpp:562)
+==26673==    by 0x567D16C: lima::Thread::staticThreadFunction(void*) (ThreadUtils.cpp:267)
+==26673==    by 0x66DFDC4: start_thread (in /usr/lib64/libpthread-2.17.so)
+==26673==    by 0x69EB73C: clone (in /usr/lib64/libc-2.17.so)
+==26673== 
+==26673== 248 bytes in 1 blocks are definitely lost in loss record 94 of 100
+==26673==    at 0x4C28203: operator new(unsigned long) (vg_replace_malloc.c:334)
+==26673==    by 0x416CDA: lima::Hexitec::Camera::AcqThread::threadFunction() (HexitecCamera.cpp:563)
+==26673==    by 0x567D16C: lima::Thread::staticThreadFunction(void*) (ThreadUtils.cpp:267)
+==26673==    by 0x66DFDC4: start_thread (in /usr/lib64/libpthread-2.17.so)
+==26673==    by 0x69EB73C: clone (in /usr/lib64/libc-2.17.so)
+==26673== 
+==26673== 248 bytes in 1 blocks are definitely lost in loss record 95 of 100
+==26673==    at 0x4C28203: operator new(unsigned long) (vg_replace_malloc.c:334)
+==26673==    by 0x416D1B: lima::Hexitec::Camera::AcqThread::threadFunction() (HexitecCamera.cpp:564)
+==26673==    by 0x567D16C: lima::Thread::staticThreadFunction(void*) (ThreadUtils.cpp:267)
+==26673==    by 0x66DFDC4: start_thread (in /usr/lib64/libpthread-2.17.so)
+==26673==    by 0x69EB73C: clone (in /usr/lib64/libc-2.17.so)
+==26673== 
+==26673== LEAK SUMMARY:
+==26673==    definitely lost: 744 bytes in 3 blocks
+==26673==    indirectly lost: 0 bytes in 0 blocks
+==26673==      possibly lost: 0 bytes in 0 blocks
+==26673==    still reachable: 6,706 bytes in 123 blocks
+==26673==                       of which reachable via heuristic:
+==26673==                         stdstring          : 910 bytes in 29 blocks
+==26673==         suppressed: 0 bytes in 0 blocks
+==26673== Reachable blocks (those to which a pointer was found) are not shown.
+==26673== To see them, rerun with: --leak-check=full --show-leak-kinds=all
+==26673== 
+==26673== For counts of detected and suppressed errors, rerun with: -v
+==26673== ERROR SUMMARY: 3 errors from 3 contexts (suppressed: 0 from 0)

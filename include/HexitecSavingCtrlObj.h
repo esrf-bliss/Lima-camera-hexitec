@@ -26,10 +26,13 @@
 #include "lima/HwInterface.h"
 #include <vector>
 #include <memory>
-#ifndef SIPCOMPILATION
-#include "H5Cpp.h"
-#endif
 
+namespace H5 {
+	class H5File;
+	class Group;
+	class DataSet;
+	class DataSpace;
+}
 namespace lima {
 namespace Hexitec {
 
@@ -45,7 +48,7 @@ public:
 	class HwSavingStream {
 	DEB_CLASS_NAMESPC(DebModCamera, "SavingCtrlObj","HwSavingStream");
 	public:
-		HwSavingStream(Camera& camera);
+		HwSavingStream(Camera& camera, int streamNb);
 		bool isActive() const;
 		void setActive(bool flag);
 		void setDirectory(const std::string& directory);
@@ -75,6 +78,7 @@ public:
 		int m_nrasters;
 		int m_nbins;
 
+		int m_streamNb;
 		bool m_active;
 		std::string m_directory;
 		std::string m_prefix;
@@ -85,12 +89,12 @@ public:
 		std::string m_index_format;
 		std::string m_overwritePolicy;
 		long m_frames_per_file;
-#ifndef SIPCOMPILATION
-		std::unique_ptr<H5::H5File> m_file;
+		H5::H5File *m_file;
 		H5::Group *m_entry;
+		H5::Group *m_measurement_detector;
+		H5::Group *m_instrument_detector;
 		H5::DataSet *m_image_dataset;
 		H5::DataSpace *m_image_dataspace;
-#endif
 	};
 
 	void getPossibleSaveFormat(std::list<std::string> &format_list) const;
@@ -118,21 +122,6 @@ public:
 
 	int m_nb_streams;
 	HwSavingStream **m_stream;
-	//	Camera& m_cam;
-//	int m_nframes;
-//	int m_npixels;
-//	int m_nrasters;
-//	int m_nbins;
-//	HexitecReconstruction* m_reconstruction;
-//
-//	std::unique_ptr<H5::H5File> m_file;
-//	H5::Group     *m_entry;
-//	H5::DataSet   *m_image_dataset;
-//	H5::DataSpace *m_image_dataspace;
-//	H5::DataSet   *m_process_dataset;
-//	H5::DataSpace *m_process_dataspace;
-//	H5::DataSet   *m_spectrum_dataset;
-//	H5::DataSpace *m_spectrum_dataspace;
 };
 
 } // namespace Hexitec
