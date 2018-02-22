@@ -22,6 +22,7 @@
 #ifndef HEXITEC_PROCESSINGTASK_H
 #define HEXITEC_PROCESSINGTASK_H
 
+#include <atomic>
 #include "processlib/LinkTask.h"
 #include "lima/HwFrameInfo.h"
 //#include "HexitecSavingCtrlObj.h"
@@ -36,12 +37,13 @@ DEB_CLASS_NAMESPC(DebModControl,"HexitecProcessingTask","Control");
 public:
 //HexitecProcessingTask(SavingCtrlObj& savingCtrlObj, int stream_idx, Camera::ProcessType processType, int asicPitch,
 	HexitecProcessingTask(HexitecSavingTask* savingTask, Camera::ProcessType processType, int asicPitch,
-			int binWidth, int speclen, int lowThreshold, int highThreshold);
+			int binWidth, int speclen, int lowThreshold, int highThreshold, int saveOpt);
 	~HexitecProcessingTask();
 
 	Data process(Data& aData);
 	void setGlobalHistogram(Data& data);
 	Data getGlobalHistogram();
+	Data getGlobalHistogramSum();
 	int getNbins();
 	int getNbProcessedFrames();
 //	void setPreviousFrame(Data& data);
@@ -61,6 +63,7 @@ private:
 	void csd_5x5(Data& srcData, int yp, int xp);
 
 	Data m_globalHist;
+    Data m_globalHistSum;
 	HexitecSavingTask* m_savingTask;
 //	SavingCtrlObj m_saving;
 //	int m_stream_idx;
@@ -71,6 +74,7 @@ private:
 	int m_lowThreshold;
 	int m_highThreshold;
 	int m_nbins;
+	int m_saveOpt;
 //	Data m_lastFrame;
 	std::atomic<int> processedCounter;
 };

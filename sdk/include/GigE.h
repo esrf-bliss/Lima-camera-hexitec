@@ -36,7 +36,8 @@
 
 #ifdef __linux__
 #include <aS_messages.h>
-#include <pthread.h>
+#include <thread>
+#include <mutex>
 #include <cstdint>
 #include <cstring>
 #include <memory>
@@ -151,7 +152,7 @@ private:
 	u32						cTransferBufferFrameCount;
 	std::queue <p_u8>		cAvailableTransferBuffer;
 #ifdef __linux__
-	pthread_mutex_t			cAvailableTransferBufferLock;
+	std::mutex			    cAvailableTransferBufferLock;
 	std::shared_ptr<AcqArmedCallback> cReadyCallBack;
 	std::shared_ptr<AcqFinishCallback> cFinishCallBack;
 	std::shared_ptr<TransferBufferReadyCallback> cBufferCallBack;

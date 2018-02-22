@@ -63,12 +63,12 @@ endif
 HDF5_LDFLAGS := -L../../../third-party/hdf5/c++/src/.libs -L../../../third-party/hdf5/src/.libs -L../../../install/Lima/lib
 HDF5_LDLIBS := -lhdf5_cpp -lhdf5
 
-test-progs = test2 test4
+test-progs = test4
 
 all: 	$(test-progs)
 
-test2:		test2.o ../src/Hexitec.o
-	$(CXX) $(LDFLAGS) -o $@ $+  $(HDF5_LDFLAGS) $(HDF5_LDLIBS) $(LDLIBS)
+#test2:		test2.o ../src/Hexitec.o
+#	$(CXX) $(LDFLAGS) -o $@ $+  $(HDF5_LDFLAGS) $(HDF5_LDLIBS) $(LDLIBS)
 
 test4:		test4.o ../src/Hexitec.o
 	$(CXX) $(LDFLAGS) -o $@ $+  $(HDF5_LDFLAGS) $(HDF5_LDLIBS) $(LDLIBS)

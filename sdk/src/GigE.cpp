@@ -109,9 +109,7 @@ void GigEDevice::RegisterTransferBufferReadyCallBack(std::shared_ptr<TransferBuf
 
 GigEDevice::~GigEDevice() 
 {
-#ifdef __linux__
-	pthread_mutex_destroy(&cAvailableTransferBufferLock);
-#else
+#ifndef __linux__
 	DeleteCriticalSection( &cAvailableTransferBufferLock );
 #endif
 	if (cPort.IsOpened())
@@ -392,7 +390,7 @@ i32	GigEDevice::AcquireImageThread( u32 ImageCount, u32 FrameTimeOut )
 		if( lCurrentFrameWithinBuffer == 0 )	// new Transferbuffer
 		{
 #ifdef __linux__
-			pthread_mutex_lock(&cAvailableTransferBufferLock);
+			cAvailableTransferBufferLock.lock();
 #else
 			EnterCriticalSection( &cAvailableTransferBufferLock );
 #endif
@@ -402,7 +400,7 @@ i32	GigEDevice::AcquireImageThread( u32 ImageCount, u32 FrameTimeOut )
 				lPointer = lTransferBuffer;
 				cAvailableTransferBuffer.pop();
 #ifdef __linux__
-				pthread_mutex_unlock(&cAvailableTransferBufferLock);
+	            cAvailableTransferBufferLock.unlock();
 #else
 				LeaveCriticalSection( &cAvailableTransferBufferLock );
 #endif
@@ -410,7 +408,7 @@ i32	GigEDevice::AcquireImageThread( u32 ImageCount, u32 FrameTimeOut )
 			else
 			{
 #ifdef __linux__
-				pthread_mutex_unlock(&cAvailableTransferBufferLock);
+	            cAvailableTransferBufferLock.unlock();
 #else
 				LeaveCriticalSection( &cAvailableTransferBufferLock );
 #endif
@@ -549,9 +547,9 @@ void GigEDevice::BufferReadyCallBack( p_u8 aTransferBuffer, u32 aCurrentFrameWit
 	else
 	{
 #ifdef __linux__
-		pthread_mutex_lock(&cAvailableTransferBufferLock);
+        cAvailableTransferBufferLock.lock();
 		cAvailableTransferBuffer.push(aTransferBuffer);
-		pthread_mutex_unlock(&cAvailableTransferBufferLock);
+        cAvailableTransferBufferLock.unlock();
 #else
 		EnterCriticalSection( &cAvailableTransferBufferLock );
 		cAvailableTransferBuffer.push(aTransferBuffer);
@@ -886,9 +884,7 @@ GigEDevice::GigEDevice(const str8 aDeviceDescriptor)
 	cResult						= PvResult::Code::OK;
 	cAcqResult					= PvResult::Code::OK;
 
-#ifdef __linux__
-	cAvailableTransferBufferLock =  PTHREAD_RECURSIVE_MUTEX_INITIALIZER_NP;
-#else
+#ifndef __linux__
 	InitializeCriticalSectionAndSpinCount(&cAvailableTransferBufferLock, 0x0400);
 #endif
 	ClearQueue();
@@ -1099,9 +1095,9 @@ void GigEDevice::RegisterTransferBufferReadyCallBack( p_bufferCallBack aTransfer
 void GigEDevice::ReturnBuffer( p_u8 Buffer )
 {
 #ifdef __linux__
-	pthread_mutex_lock(&cAvailableTransferBufferLock);
+    cAvailableTransferBufferLock.lock();
 	cAvailableTransferBuffer.push(Buffer);
-	pthread_mutex_unlock(&cAvailableTransferBufferLock);
+    cAvailableTransferBufferLock.unlock();
 #else
 	EnterCriticalSection( &cAvailableTransferBufferLock );
 	cAvailableTransferBuffer.push(Buffer);

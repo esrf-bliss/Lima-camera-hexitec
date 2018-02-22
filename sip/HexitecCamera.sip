@@ -33,7 +33,7 @@ class Camera
 public:
 
 	enum Status { Ready, Initialising, Exposure, Readout, Paused, Fault };
-	enum SaveOpt { SaveRaw=1, SaveProcessed=2, SaveHistogram=4 };
+	enum SaveOpt { SaveRaw=1, SaveProcessed=2, SaveHistogram=4, SaveSummed=8};
 	enum ProcessType {RAW,SORT,CSA,CSD,CSA_NF,CSD_NF};
 
 	struct Environment {
@@ -103,6 +103,8 @@ public:
 	void getOperatingValues(OperatingValues& opval /Out/);
 	void getCollectDcTimeout(int& timeout /Out/);
 	void setCollectDcTimeout(int timeout);
+    void getFrameTimeout(int& timeout /Out/);
+    void setFrameTimeout(int timeout);
 	void collectOffsetValues();
 	void setType(ProcessType type);
 	void getType(ProcessType& type /Out/);
@@ -125,6 +127,13 @@ public:
 	void getBiasVoltageRefreshInterval(int& millis /Out/);
 	void getBiasVoltageRefreshTime(int& millis /Out/);
 	void getBiasVoltageSettleTime(int& millis /Out/);
+    void setBiasVoltage(int volts);
+    void getBiasVoltage(int& volts /Out/);
+    void setRefreshVoltage(int volts);
+    void getRefreshVoltage(int& volts /Out/);
+    void setFramesPerTrigger(int nframes);
+    void getFramesPerTrigger(int& nframes /Out/);
+    void getSkippedFrameCount(int& count /Out/);
 
 };
 

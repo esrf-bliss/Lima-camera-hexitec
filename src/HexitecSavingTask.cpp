@@ -22,6 +22,7 @@
 #include "HexitecSavingTask.h"
 #include <algorithm>
 #include <vector>
+#include "processlib/Data.h"
 #include "processlib/PoolThreadMgr.h"
 #include "processlib/TaskMgr.h"
 
@@ -40,7 +41,6 @@ Data HexitecSavingTask::process(Data& aData) {
 	int frameNb;
 	int width;
 	int height;
-	uint16_t *dptr = (uint16_t*) aData.data();
 	DEB_PARAM() << DEB_VAR1(aData);
 	if (aData.dimensions.size() == 2) {
 		nframe = 1;
@@ -51,15 +51,53 @@ Data HexitecSavingTask::process(Data& aData) {
 		height = aData.dimensions[1];
 		nframe = aData.dimensions[2];
 	}
-	for (auto i = 0; i < nframe; i++) {
-		frameNb = (nframe == 1) ? aData.frameNumber : i;
-		FrameDim frameDim(width, height, Bpp16);
-		DEB_TRACE() << DEB_VAR3(width, height, frameNb);
-		HwFrameInfo hwFrameInfo(frameNb, dptr, &frameDim, aData.timestamp, true,
-				HwFrameInfo::OwnerShip::Shared);
-		DEB_TRACE() << DEB_VAR4(m_stream_idx, frameNb, width, height);
-		m_saving.writeFrame(hwFrameInfo, m_stream_idx);
-		dptr += (width*height);
+	switch(aData.type) {
+    case Data::UINT64:
+        {
+            uint64_t *dptr = (uint64_t*) aData.data();
+            FrameDim frameDim(width, height, Bpp64);
+            DEB_TRACE() << DEB_VAR4(m_stream_idx, width, height, aData.type);
+            for (auto i = 0; i < nframe; i++) {
+                frameNb = (nframe == 1) ? aData.frameNumber : i;
+                DEB_TRACE() << DEB_VAR3(width, height, frameNb);
+                HwFrameInfo hwFrameInfo(frameNb, dptr, &frameDim, aData.timestamp, true,
+                        HwFrameInfo::OwnerShip::Shared);
+                m_saving.writeFrame(hwFrameInfo, m_stream_idx);
+                dptr += (width*height);
+            }
+        }
+        break;
+    case Data::UINT32:
+        {
+            uint32_t *dptr = (uint32_t*) aData.data();
+            FrameDim frameDim(width, height, Bpp32);
+            DEB_TRACE() << DEB_VAR4(m_stream_idx, width, height, aData.type);
+            for (auto i = 0; i < nframe; i++) {
+                frameNb = (nframe == 1) ? aData.frameNumber : i;
+                DEB_TRACE() << DEB_VAR3(width, height, frameNb);
+                HwFrameInfo hwFrameInfo(frameNb, dptr, &frameDim, aData.timestamp, true,
+                        HwFrameInfo::OwnerShip::Shared);
+                m_saving.writeFrame(hwFrameInfo, m_stream_idx);
+                dptr += (width*height);
+            }
+        }
+        break;
+    default:
+    case Data::UINT16:
+        {
+            uint16_t *dptr = (uint16_t*) aData.data();
+            FrameDim frameDim(width, height, Bpp16);
+            DEB_TRACE() << DEB_VAR4(m_stream_idx, width, height, aData.type);
+            for (auto i = 0; i < nframe; i++) {
+                frameNb = (nframe == 1) ? aData.frameNumber : i;
+                DEB_TRACE() << DEB_VAR3(width, height, frameNb);
+                HwFrameInfo hwFrameInfo(frameNb, dptr, &frameDim, aData.timestamp, true,
+                        HwFrameInfo::OwnerShip::Shared);
+                m_saving.writeFrame(hwFrameInfo, m_stream_idx);
+                dptr += (width*height);
+            }
+        }
+        break;
 	}
 	return aData;
 }

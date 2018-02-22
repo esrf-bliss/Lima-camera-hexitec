@@ -297,18 +297,24 @@ void HexitecProcessingTask::createSpectra(Data& srcData) {
 	// Add Data to total spectra per pixels
 	int frameNb = srcData.frameNumber;
 	uint16_t* dptr = (uint16_t*)srcData.data();
-	uint16_t* sptr = (uint16_t*) m_globalHist.data();
+	uint32_t* sptr = (uint32_t*) m_globalHist.data();
+    uint64_t* tptr = (uint64_t*) m_globalHistSum.data();
 	int width = srcData.dimensions[0];
 	int height = srcData.dimensions[1];
-	int maxidx = m_nbins*height*width * sizeof(uint16_t );
+	int maxidx = m_nbins*height*width * sizeof(uint32_t);
 	for (auto i=0; i<height; i++) {
 		for (auto j=0; j<width; j++, dptr++) {
 			if (*dptr > m_lowThreshold && *dptr < m_highThreshold) {
-				int idx = int(ceil((*dptr)*m_nbins/m_highThreshold))*width*height + i*width + j;
-				std::atomic<uint16_t*> sp;
+			    int depth = int(ceil((*dptr)*m_nbins/m_highThreshold));
+				int idx = depth*width*height + i*width + j;
+				std::atomic<uint32_t*> sp;
+                std::atomic<uint64_t*> tp;
 				sp = sptr+idx;
-				if (idx >= 0 && idx < maxidx)
+				tp = tptr + depth;
+				if (idx >= 0 && idx < maxidx) {
 					*sp += 1;
+					*tp += 1;
+				}
 			}
 		}
 	}
@@ -410,7 +416,8 @@ Data HexitecProcessingTask::process(Data& srcData) {
 			break;
 		}
 	}
-	if (m_savingTask != nullptr) {
+//	if (m_savingTask != nullptr) {
+	if (m_saveOpt & 2) {
 		TaskMgr *taskMgr = new TaskMgr();
 		taskMgr->setLinkTask(2, m_savingTask);
 		taskMgr->setInputData(dstData);
@@ -423,10 +430,10 @@ Data HexitecProcessingTask::process(Data& srcData) {
 }
 
 HexitecProcessingTask::HexitecProcessingTask(HexitecSavingTask* savingTask, Camera::ProcessType processType, int asicPitch,
-		int binWidth, int speclen, int lowThreshold, int highThreshold) :
+		int binWidth, int speclen, int lowThreshold, int highThreshold, int saveOpt) :
 		LinkTask(true), m_savingTask(savingTask), m_processType(processType),
 		m_asicPitch(asicPitch), m_binWidth(binWidth), m_speclen(speclen), m_lowThreshold(lowThreshold), m_highThreshold(highThreshold),
-		processedCounter(0) {
+		processedCounter(0), m_saveOpt(saveOpt) {
 
 	DEB_CONSTRUCTOR();
 	int width = 80;
@@ -437,12 +444,27 @@ HexitecProcessingTask::HexitecProcessingTask(HexitecSavingTask* savingTask, Came
 	histDimensions.push_back(height);
 	histDimensions.push_back(m_nbins);
 	m_globalHist.dimensions = histDimensions;
-	Buffer *newBuffer = new Buffer(width * height * sizeof(uint16_t) * m_nbins);
+	Buffer *newBuffer = new Buffer(width * height * sizeof(uint32_t) * m_nbins);
 	m_globalHist.setBuffer(newBuffer);
+    m_globalHist.type = Data::UINT32;
 	newBuffer->unref();
 	DEB_TRACE() << "global hist data pointer " << DEB_VAR1(m_globalHist.data());
 	// Ensure histogram is cleared to start
-	memset(m_globalHist.data(), 0, m_nbins * height * width * sizeof(uint16_t));
+	memset(m_globalHist.data(), 0, m_nbins * height * width * sizeof(uint32_t));
+
+	// create a buffer to sum all the histogram spectra
+    std::vector<int> histSumDimensions;
+    histSumDimensions.push_back(m_nbins);
+    histSumDimensions.push_back(1);
+    m_globalHistSum.dimensions = histSumDimensions;
+    Buffer *newSumBuffer = new Buffer(sizeof(uint64_t) * m_nbins);
+    m_globalHistSum.setBuffer(newSumBuffer);
+    m_globalHistSum.frameNumber = 0;
+    m_globalHistSum.type = Data::UINT64;
+    newSumBuffer->unref();
+    DEB_TRACE() << "global hist sum data pointer " << DEB_VAR1(m_globalHistSum.data());
+    // Ensure histogram is cleared to start
+    memset(m_globalHistSum.data(), 0, m_nbins * sizeof(uint64_t));
 }
 
 HexitecProcessingTask::~HexitecProcessingTask() {
@@ -451,6 +473,10 @@ HexitecProcessingTask::~HexitecProcessingTask() {
 
 Data HexitecProcessingTask::getGlobalHistogram() {
 	return m_globalHist;
+}
+
+Data HexitecProcessingTask::getGlobalHistogramSum() {
+    return m_globalHistSum;
 }
 
 int HexitecProcessingTask::getNbins() {
