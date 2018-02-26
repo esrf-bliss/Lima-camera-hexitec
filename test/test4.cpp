@@ -64,7 +64,7 @@ int main() {
 	int asicPitch = 250;
 	int timeout = 30000;
 	int nextNumber = 0;
-	int loop = 1;
+	int loop = 50;
 	int framesPerFile = nframes;
 	int highThreshold = 8000;
 	int lowThreshold = 100;

@@ -1011,7 +1011,7 @@ void Camera::getBiasVoltageRefreshInterval(int& millis) {
 }
 
 void Camera::getBiasVoltageRefreshTime(int& millis) {
-	millis = m_biasVoltageRefreshTime;
+    millis = m_biasVoltageRefreshTime;
 }
 
 void Camera::getBiasVoltageSettleTime(int& millis) {

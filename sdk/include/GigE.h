@@ -32,6 +32,7 @@
 #include <PvBuffer.h>
 #include <PvDeviceSerialPort.h>
 #include <PvDeviceAdapter.h>
+#include <PvDeviceInfoGEV.h>
 #include <queue>
 
 #ifdef __linux__

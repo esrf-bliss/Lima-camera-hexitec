@@ -29,7 +29,7 @@ LDFLAGS = -pthread -L../../../build  -L../../../third-party/Processlib/build -L/
 LDLIBS = -llimacore  -lprocesslib
 else
 LDFLAGS = -pthread -L../../../build  -L../../../third-party/Processlib/build -L../sdk/tools/src -L$(PLEORA_ROOT)/pleora/ebus_sdk/CentOS-RHEL-7-x86_64/lib -L/usr/lib64 
-LDLIBS = -llimacore  -lprocesslib -lPvDevice -lPvStream -lPvBuffer -lPvGenICam -lPvBase -lPvSerial -lEbUtilsLib -ludev
+LDLIBS = -llimacore  -lprocesslib -lPvDevice -lPvStream -lPvBuffer -lPvGenICam -lPvBase -lPvSerial -lPvSystem -lEbUtilsLib -ludev
 endif
 
 CXXFLAGS = -I../include \
