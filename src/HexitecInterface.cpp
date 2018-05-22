@@ -112,6 +112,7 @@ void Interface::getStatus(StatusType& status) {
 	case Camera::Ready:
 		status.det = DetIdle;
 		status.acq = AcqReady;
+//		std::cout << "DetIdle/AcqReady" << std::endl;
 		break;
 	case Camera::Initialising:
 		status.det = DetIdle;
@@ -120,14 +121,17 @@ void Interface::getStatus(StatusType& status) {
 	case Camera::Exposure:
 		status.det = DetExposure;
 		status.acq = AcqRunning;
+//        std::cout << "DetExposure/AcqRunning" << std::endl;
 		break;
 	case Camera::Readout:
 		status.det = DetReadout;
 		status.acq = AcqRunning;
+//        std::cout << "DetReadout/AcqRunning" << std::endl;
 		break;
 	case Camera::Paused:
 		status.det = DetLatency;
 		status.acq = AcqRunning;
+//        std::cout << "DetLAtency/AcqRunning" << std::endl;
 		break;
 	case Camera::Fault:
 		status.det = DetFault;

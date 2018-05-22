@@ -399,7 +399,7 @@ void SavingCtrlObj::HwSavingStream::stop() {
 
 void SavingCtrlObj::HwSavingStream::prepare() {
 	DEB_MEMBER_FUNCT();
-	DEB_TRACE() << "Entering SavingCtrlObj prepare stream " << m_streamNb;
+	DEB_ALWAYS() << "Entering SavingCtrlObj prepare stream " << m_streamNb;
 	std::string filename;
 	if (m_suffix != ".hdf")
 		THROW_HW_ERROR(lima::Error) << "Suffix must be .hdf";
@@ -495,29 +495,52 @@ void SavingCtrlObj::HwSavingStream::prepare() {
 		write_h5_dataset(process_info, "LowThreshold ", value);
 		m_cam.getHighThreshold(value);
 		write_h5_dataset(process_info, "HighThreshold", value);
-		int dvalue;
-		m_cam.getBinWidth(dvalue);
-		write_h5_dataset(process_info, "BinWidth", dvalue);
+		int binWidth;
+		m_cam.getBinWidth(binWidth);
+		write_h5_dataset(process_info, "BinWidth", binWidth);
+        int specLen;
+        m_cam.getSpecLen(specLen);
+        write_h5_dataset(process_info, "SpecLen", specLen);
+        int nbins = (specLen / binWidth);
 
-		DEB_TRACE() << "create the image data structure in the file";
-		// create the image data structure in the file
-		hsize_t data_dims[3], max_dims[3];
-		data_dims[1] = m_nrasters;
-		data_dims[2] = m_npixels;
-		data_dims[0] = m_nframes;
-		max_dims[1] = m_nrasters;
-		max_dims[2] = m_npixels;
-		max_dims[0] = H5S_UNLIMITED;
-		// Create property list for the dataset and setup chunk size
-		DSetCreatPropList plist;
-		hsize_t chunk_dims[3];
-		// calculate a optimized chunking
-		calculate_chunck(data_dims, chunk_dims, 2);
-		plist.setChunk(RANK_THREE, chunk_dims);
+        int saveOpt;
+        m_cam.getSaveOpt(saveOpt);
 
-		m_image_dataspace = new DataSpace(RANK_THREE, data_dims, max_dims); // create new dspace
-		m_image_dataset = new DataSet(m_measurement_detector->createDataSet("raw_image", PredType::NATIVE_UINT16, *m_image_dataspace, plist));
-
+        // StreamNb == 3 is a bit of a kludge for now!!
+        if (saveOpt & Camera::SaveSummed && m_streamNb == 3) {
+            DEB_TRACE() << "create the spectrum data structure in the file";
+            // create the image data structure in the file
+            hsize_t data_dims[2], max_dims[2];
+            data_dims[1] = nbins;
+            data_dims[0] = m_nframes;
+            m_image_dataspace = new DataSpace(RANK_TWO, data_dims); // create new dspace
+            m_image_dataset = new DataSet(
+                    m_measurement_detector->createDataSet("spectrum", PredType::NATIVE_UINT64, *m_image_dataspace));
+        } else {
+            DEB_TRACE() << "create the image data structure in the file";
+            // create the image data structure in the file
+            hsize_t data_dims[3], max_dims[3];
+            data_dims[1] = m_nrasters;
+            data_dims[2] = m_npixels;
+            data_dims[0] = m_nframes;
+            max_dims[1] = m_nrasters;
+            max_dims[2] = m_npixels;
+            max_dims[0] = H5S_UNLIMITED;
+            // Create property list for the dataset and setup chunk size
+            DSetCreatPropList plist;
+            hsize_t chunk_dims[3];
+            // calculate a optimized chunking
+            calculate_chunck(data_dims, chunk_dims, 2);
+            plist.setChunk(RANK_THREE, chunk_dims);
+            m_image_dataspace = new DataSpace(RANK_THREE, data_dims, max_dims); // create new dspace
+            if (saveOpt & Camera::SaveHistogram && m_streamNb == 2) {
+                m_image_dataset = new DataSet(
+                    m_measurement_detector->createDataSet("raw_image", PredType::NATIVE_UINT32, *m_image_dataspace, plist));
+            } else {
+                m_image_dataset = new DataSet(
+                    m_measurement_detector->createDataSet("raw_image", PredType::NATIVE_UINT16, *m_image_dataspace, plist));
+            }
+        }
 	} catch (FileIException &error) {
 		THROW_CTL_ERROR(Error) << "File " << filename << " not opened successfully";
 	}
@@ -543,21 +566,42 @@ void SavingCtrlObj::HwSavingStream::prepare() {
 void SavingCtrlObj::HwSavingStream::writeFrame(HwFrameInfoType& frame_info) {
 	DEB_MEMBER_FUNCT();
 	try {
-		uint16_t* image_data = (uint16_t*) frame_info.frame_ptr;
 		FrameDim fdim = frame_info.frame_dim;
 		Size size = fdim.getSize();
+		int width = size.getWidth();
+		int height = size.getHeight();
+        int saveOpt;
+        m_cam.getSaveOpt(saveOpt);
 
-		hsize_t slab_dim[3];
-		slab_dim[2] = m_npixels;
-		slab_dim[1] = m_nrasters;
-		slab_dim[0] = 1;
-		DataSpace slabspace = DataSpace(RANK_THREE, slab_dim);
+		if (height == 1) {
+            uint64_t* image_data = (uint64_t*) frame_info.frame_ptr;
+	        hsize_t slab_dim[2];
+	        slab_dim[1] = width;
+	        slab_dim[0] = 1;
+	        DataSpace slabspace = DataSpace(RANK_TWO, slab_dim);
 
-		hsize_t offset[] = { (unsigned) frame_info.acq_frame_nb, 0, 0 };
-		hsize_t count[] = { 1, (unsigned) m_npixels, (unsigned) m_nrasters };
-		DEB_TRACE() << DEB_VAR4(m_streamNb, frame_info.acq_frame_nb, offset, count);
-		m_image_dataspace->selectHyperslab(H5S_SELECT_SET, count, offset);
-		m_image_dataset->write(image_data, PredType::NATIVE_UINT16, slabspace, *m_image_dataspace);
+	        hsize_t offset[] = { (unsigned) frame_info.acq_frame_nb, 0};
+            hsize_t count[] = { 1, (unsigned) width};
+            DEB_TRACE() << DEB_VAR4(m_streamNb, frame_info.acq_frame_nb, offset, count);
+            m_image_dataspace->selectHyperslab(H5S_SELECT_SET, count, offset);
+            m_image_dataset->write(image_data, PredType::NATIVE_UINT64, slabspace, *m_image_dataspace);
+		} else {
+		    hsize_t slab_dim[3];
+            slab_dim[2] = size.getWidth();
+            slab_dim[1] = size.getHeight();
+            slab_dim[0] = 1;
+            DataSpace slabspace = DataSpace(RANK_THREE, slab_dim);
+
+            hsize_t offset[] = { (unsigned) frame_info.acq_frame_nb, 0, 0};
+            hsize_t count[] = { 1, (unsigned) width, (unsigned) height };
+            DEB_TRACE() << DEB_VAR4(m_streamNb, frame_info.acq_frame_nb, offset, count);
+            m_image_dataspace->selectHyperslab(H5S_SELECT_SET, count, offset);
+            if (saveOpt & Camera::SaveHistogram && m_streamNb == 2) {
+                m_image_dataset->write((uint32_t*) frame_info.frame_ptr, PredType::NATIVE_UINT32, slabspace, *m_image_dataspace);
+            } else {
+                m_image_dataset->write((uint16_t*) frame_info.frame_ptr, PredType::NATIVE_UINT16, slabspace, *m_image_dataspace);
+            }
+        }
 	}
 	catch (H5::Exception &e) {
 		THROW_CTL_ERROR(Error) << e.getCDetailMsg();

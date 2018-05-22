@@ -7,13 +7,13 @@
 #include <unistd.h>
 #include <chrono>
 #include <thread>
+#include <mutex>
 
 using namespace HexitecAPI;
 using namespace GigE;
 
 HexitecApi::HexitecApi(const std::string deviceDescriptor, uint32_t timeout) : m_deviceDescriptor(deviceDescriptor), m_timeout(timeout),
 	m_sensorConfig(), m_operationMode(), m_systemConfig(), m_biasConfig() {
-	mutexLock = PTHREAD_RECURSIVE_MUTEX_INITIALIZER_NP;
 }
 
 HexitecApi::~HexitecApi() {
@@ -100,23 +100,52 @@ int32_t HexitecApi::readConfiguration(std::string fname) {
 		m_sensorConfig.SetupRow.CalEn[i] = pack(rowCalStr, idx);
 	}
 
-	section = "HexitecOperationMode";
-	m_operationMode.DcUploadDarkCorrectionValues = static_cast<Control>(reader.GetInteger(section, "DcUploadDarkCorrectionValues", 0));
-	m_operationMode.DcCollectDarkCorrectionValues = static_cast<Control>(reader.GetInteger(section, "DcCollectDarkCorrectionValues", 0));
-	m_operationMode.DcEnableDarkCorrectionCountingMode = static_cast<Control>(reader.GetInteger(section, "DcEnableDarkCorrectionCountingMode", 0));
-	m_operationMode.DcEnableDarkCorrectionSpectroscopicMode = static_cast<Control>(reader.GetInteger(section, "DcEnableDarkCorrectionSpectroscopicMode", 0));
-	m_operationMode.DcSendDarkCorrectionValues = static_cast<Control>(reader.GetInteger(section, "DcSendDarkCorrectionValues", 0));
-	m_operationMode.DcDisableVcalPulse = static_cast<Control>(reader.GetInteger(section, "DcDisableVcalPulse", 0));
-	m_operationMode.DcTestMode = static_cast<Control>(reader.GetInteger(section, "DcTestMode", 0));
-	m_operationMode.DcEnableTriggeredCountingMode = static_cast<Control>(reader.GetInteger(section, "DcEnableTriggeredCountingMode", 0));
-	m_operationMode.EdUploadThresholdValues = static_cast<Control>(reader.GetInteger(section, "EdUploadThresholdValues", 0));
-	m_operationMode.EdDisableCountingMode = static_cast<Control>(reader.GetInteger(section, "EdDisableCountingMode", 0));
-	m_operationMode.EdTestMode = static_cast<Control>(reader.GetInteger(section, "EdTestMode", 0));
-	m_operationMode.EdCycles.size2 = static_cast<Control>(reader.GetInteger(section, "EdCycles", 0));
-	m_operationMode.enSyncMode = static_cast<Control>(reader.GetInteger(section, "enSyncMode", 0));
-	m_operationMode.enTriggerMode = static_cast<Control>(reader.GetInteger(section, "enTriggerMode", 0));
+	m_operationMode.DcUploadDarkCorrectionValues = CONTROL_DISABLED;
+	m_operationMode.DcCollectDarkCorrectionValues = CONTROL_DISABLED;
+	m_operationMode.DcEnableDarkCorrectionCountingMode = CONTROL_DISABLED;
+	m_operationMode.DcEnableDarkCorrectionSpectroscopicMode = CONTROL_ENABLED;
+	m_operationMode.DcSendDarkCorrectionValues = CONTROL_DISABLED;
+	m_operationMode.DcDisableVcalPulse = CONTROL_DISABLED;
+	m_operationMode.DcTestMode = CONTROL_DISABLED;
+	m_operationMode.DcEnableTriggeredCountingMode = CONTROL_DISABLED;
+	m_operationMode.EdUploadThresholdValues = CONTROL_DISABLED;
+	m_operationMode.EdDisableCountingMode = CONTROL_DISABLED;
+	m_operationMode.EdTestMode = CONTROL_DISABLED;
+	m_operationMode.EdCycles.size2 = 1;
+	m_operationMode.enSyncMode = CONTROL_ENABLED;
+//	section = "HexitecOperationMode";
+//	m_operationMode.DcUploadDarkCorrectionValues = static_cast<Control>(reader.GetInteger(section, "DcUploadDarkCorrectionValues", 0));
+//	m_operationMode.DcCollectDarkCorrectionValues = static_cast<Control>(reader.GetInteger(section, "DcCollectDarkCorrectionValues", 0));
+//	m_operationMode.DcEnableDarkCorrectionCountingMode = static_cast<Control>(reader.GetInteger(section, "DcEnableDarkCorrectionCountingMode", 0));
+//	m_operationMode.DcEnableDarkCorrectionSpectroscopicMode = static_cast<Control>(reader.GetInteger(section, "DcEnableDarkCorrectionSpectroscopicMode", 0));
+//	m_operationMode.DcSendDarkCorrectionValues = static_cast<Control>(reader.GetInteger(section, "DcSendDarkCorrectionValues", 0));
+//	m_operationMode.DcDisableVcalPulse = static_cast<Control>(reader.GetInteger(section, "DcDisableVcalPulse", 0));
+//	m_operationMode.DcTestMode = static_cast<Control>(reader.GetInteger(section, "DcTestMode", 0));
+//	m_operationMode.DcEnableTriggeredCountingMode = static_cast<Control>(reader.GetInteger(section, "DcEnableTriggeredCountingMode", 0));
+//	m_operationMode.EdUploadThresholdValues = static_cast<Control>(reader.GetInteger(section, "EdUploadThresholdValues", 0));
+//	m_operationMode.EdDisableCountingMode = static_cast<Control>(reader.GetInteger(section, "EdDisableCountingMode", 0));
+//	m_operationMode.EdTestMode = static_cast<Control>(reader.GetInteger(section, "EdTestMode", 0));
+//	m_operationMode.EdCycles.size2 = static_cast<Control>(reader.GetInteger(section, "EdCycles", 0));
+//	m_operationMode.enSyncMode = static_cast<Control>(reader.GetInteger(section, "enSyncMode", 0));
+//	m_operationMode.enTriggerMode = static_cast<Control>(reader.GetInteger(section, "enTriggerMode", 0));
 
 	return NO_ERROR;
+}
+
+int32_t HexitecApi::setTriggerCountingMode(bool enable) {
+    int32_t result = NO_ERROR;
+    HexitecOperationMode currentMode;
+
+    result = getOperationMode(currentMode);
+    if (result == NO_ERROR) {
+        if (enable) {
+            currentMode.DcEnableTriggeredCountingMode = Control::CONTROL_ENABLED;
+        } else {
+            currentMode.DcEnableTriggeredCountingMode = Control::CONTROL_DISABLED;
+        }
+        result = setOperationMode(currentMode);
+    }
+    return result;
 }
 
 int32_t HexitecApi::createPipelineOnly(uint32_t bufferCount) {
@@ -146,6 +175,21 @@ int32_t HexitecApi::setHvBiasOn(bool onOff) {
 	} else {
 		result = setDAC(m_sensorConfig.Vcal, m_systemConfig.Umid, m_biasConfig.RefreshVoltage, m_systemConfig.DetCtrl, m_systemConfig.TargetTemperature);
 	}
+}
+
+void HexitecApi::setBiasVoltage(int volts) {
+    m_biasConfig.BiasVoltage = volts;
+}
+void HexitecApi::getBiasVoltage(int& volts) {
+    volts = m_biasConfig.BiasVoltage;
+}
+
+void HexitecApi::setRefreshVoltage(int volts) {
+    m_biasConfig.RefreshVoltage = volts;
+}
+
+void HexitecApi::getRefreshVoltage(int& volts) {
+    volts = m_biasConfig.RefreshVoltage;
 }
 
 /**
@@ -210,13 +254,7 @@ int32_t HexitecApi::collectOffsetValues(uint32_t collectDctimeout) {
 		collectMode.DcCollectDarkCorrectionValues = Control::CONTROL_ENABLED;
 		collectMode.DcUploadDarkCorrectionValues = Control::CONTROL_DISABLED;
 		collectMode.DcDisableVcalPulse = Control::CONTROL_ENABLED;
-		result = disableSM();
-	}
-	if (result == NO_ERROR) {
 		result = setOperationMode(collectMode);
-	}
-	if (result == NO_ERROR) {
-		result = enableSM();
 	}
 	if (result == NO_ERROR) {
 		usleep(collectDctimeout*1000);
@@ -229,13 +267,7 @@ int32_t HexitecApi::collectOffsetValues(uint32_t collectDctimeout) {
 		result = COLLECT_DC_NOT_READY;
 	}
 	if (result == NO_ERROR) {
-		result = disableSM();
-	}
-	if (result == NO_ERROR) {
 		result = setOperationMode(currentMode);
-	}
-	if (result == NO_ERROR) {
-		result = enableSM();
 	}
 	return result;
 }
@@ -243,20 +275,18 @@ int32_t HexitecApi::collectOffsetValues(uint32_t collectDctimeout) {
 int32_t HexitecApi::configureDetector(uint8_t& width, uint8_t& height, double& frameTime, uint32_t& collectDcTime) {
 	int32_t result = NO_ERROR;
 	uint8_t value = 0;
-
+//
+// TODO This method needs sorting out. Its a jumble
+// for a start enableSM & disableSM should be removed
+// syncMode should be in SetOPerationMode
+// and m.systemConfig's should be in a seperate method.
+//
 	result = disableSM();
 	if (result == NO_ERROR) {
 		if (m_operationMode.enSyncMode == CONTROL_ENABLED) {
 			result = enableSyncMode();
 		} else {
 			result = disableSyncMode();
-		}
-	}
-	if (result == NO_ERROR) {
-		if (m_operationMode.enTriggerMode== CONTROL_ENABLED) {
-			result = enableTriggerMode();
-		} else {
-			result = disableTriggerMode();
 		}
 	}
 	if (result == NO_ERROR) {
@@ -281,6 +311,9 @@ int32_t HexitecApi::configureDetector(uint8_t& width, uint8_t& height, double& f
 	if (result == NO_ERROR) {
 		result = setOperationMode(m_operationMode);
 	}
+    if (result == NO_ERROR) {
+        result = disableSM();
+    }
 	if (result == NO_ERROR) {
 		result = enableFunctionBlocks(Control::CONTROL_DISABLED, Control::CONTROL_ENABLED, Control::CONTROL_ENABLED);
 	}
@@ -350,6 +383,8 @@ int32_t HexitecApi::disableTriggerGate() {
 	uint8_t rxBuffer[7];
 	uint32_t bytesWritten = 0;
 	uint32_t bytesRead = 0;
+    int32_t result = NO_ERROR;
+    HexitecOperationMode currentMode;
 
 	txBuffer[0] = 0x23;
 	txBuffer[1] = MODULE_ADDRESS;
@@ -377,16 +412,7 @@ int32_t HexitecApi::disableTriggerMode() {
 	txBuffer[5] = 0x30;
 	txBuffer[6] = 0x32;
 	txBuffer[7] = 0x0d;
-	result = serialPortWriteRead(txBuffer, sizeof(txBuffer), bytesWritten, rxBuffer, sizeof(rxBuffer), bytesRead);
-	if (result == NO_ERROR) {
-		std::shared_ptr<AcqArmedCallback> cbk = std::shared_ptr<AcqArmedCallback>(nullptr);
-		gigeDevice->RegisterAcqArmedCallBack(cbk);
-	}
-	if (result == NO_ERROR) {
-		std::shared_ptr<AcqFinishCallback> cbk = std::shared_ptr<AcqFinishCallback>(nullptr);
-		gigeDevice->RegisterAcqFinishCallBack(cbk);
-	}
-	return result;
+	return serialPortWriteRead(txBuffer, sizeof(txBuffer), bytesWritten, rxBuffer, sizeof(rxBuffer), bytesRead);
 }
 
 int32_t HexitecApi::enableFunctionBlocks(Control adcEnable, Control dacEnable, Control peltierEnable) {
@@ -427,11 +453,12 @@ int32_t HexitecApi::enableSyncMode() {
 	return serialPortWriteRead(txBuffer, sizeof(txBuffer), bytesWritten, rxBuffer, sizeof(rxBuffer), bytesRead);
 }
 
-i32 HexitecApi::enableTriggerGate() {
+int32_t HexitecApi::enableTriggerGate() {
 	uint8_t txBuffer[8];
 	uint8_t rxBuffer[7];
 	uint32_t bytesWritten = 0;
 	uint32_t bytesRead = 0;
+    int32_t result = NO_ERROR;
 
 	txBuffer[0] = 0x23;
 	txBuffer[1] = MODULE_ADDRESS;
@@ -441,7 +468,8 @@ i32 HexitecApi::enableTriggerGate() {
 	txBuffer[5] = 0x30;
 	txBuffer[6] = 0x34;
 	txBuffer[7] = 0x0d;
-	return serialPortWriteRead(txBuffer, sizeof(txBuffer), bytesWritten, rxBuffer, sizeof(rxBuffer), bytesRead);
+	result=  serialPortWriteRead(txBuffer, sizeof(txBuffer), bytesWritten, rxBuffer, sizeof(rxBuffer), bytesRead);
+    return result;
 }
 
 int32_t HexitecApi::enableTriggerMode() {
@@ -468,8 +496,11 @@ int32_t HexitecApi::enableTriggerMode() {
 		std::shared_ptr<AcqFinishCallback> cbk = std::shared_ptr<AcqFinishCallback>(new HexitecFinishCb(*this));
 		gigeDevice->RegisterAcqFinishCallBack(cbk);
 	}
-
 	return result;
+}
+
+void armed() {
+    std::cout << "+++++++++++++ I'm armed" << std::endl;
 }
 
 int32_t HexitecApi::exitDevice() {
@@ -569,11 +600,11 @@ int32_t HexitecApi::getOperationMode(HexitecOperationMode& operationMode) {
 		operationMode.EdUploadThresholdValues = (Control) (value & 0x01);
 		operationMode.EdDisableCountingMode = (Control) ((value & 0x02) >> 1);
 		operationMode.EdTestMode = (Control) ((value & 0x04) >> 2);
-		result = writeRegister(0x28, value);
+		result = readRegister(0x28, value);
 	}
 	if (result == NO_ERROR) {
 		operationMode.EdCycles.size1[0] = value;
-		result = writeRegister(0x29, value);
+		result = readRegister(0x29, value);
 	}
 	if (result == NO_ERROR) {
 		operationMode.EdCycles.size1[1] = value;
@@ -853,6 +884,7 @@ int32_t HexitecApi::serialPortWriteRead(const uint8_t* txBuffer, uint32_t txBuff
 		uint32_t rxBufferSize, uint32_t& bytesRead) {
 	int32_t result = NO_ERROR;
 
+	mutexLock.lock();
 	if (txBufferSize) {
 		result = gigeDevice->FlushRxBuffer();
 		if (result == NO_ERROR) {
@@ -862,6 +894,7 @@ int32_t HexitecApi::serialPortWriteRead(const uint8_t* txBuffer, uint32_t txBuff
 	if ((result == NO_ERROR) && rxBufferSize) {
 		result = gigeDevice->ReadSerialPort(rxBuffer, rxBufferSize, &bytesRead, m_timeout);
 	}
+	mutexLock.unlock();
 	return result;
 }
 
@@ -945,13 +978,7 @@ int32_t HexitecApi::uploadOffsetValues(Reg2Byte* offsetValues, uint32_t offsetVa
 		uploadMode = currentMode;
 		uploadMode.DcCollectDarkCorrectionValues = Control::CONTROL_DISABLED;
 		uploadMode.DcUploadDarkCorrectionValues = Control::CONTROL_ENABLED;
-		result = disableSM();
-	}
-	if (result == NO_ERROR) {
 		result = setOperationMode(uploadMode);
-	}
-	if (result == NO_ERROR) {
-		result = enableSM();
 	}
 	while ((result == NO_ERROR) && valuesToTransmit) {
 		if (valuesToTransmit < HEXITEC_MAX_STREAM_REGISTER_COUNT) {
@@ -968,13 +995,7 @@ int32_t HexitecApi::uploadOffsetValues(Reg2Byte* offsetValues, uint32_t offsetVa
 		valuesToTransmit = valuesToTransmit - (uint32_t) fpgaRegisterStream.size();
 	}
 	if (result == NO_ERROR) {
-		result = disableSM();
-	}
-	if (result == NO_ERROR) {
 		result = setOperationMode(currentMode);
-	}
-	if (result == NO_ERROR) {
-		result = enableSM();
 	}
 	return result;
 }
@@ -1086,15 +1107,18 @@ int32_t HexitecApi::setOperationMode(HexitecOperationMode operationMode) {
 	uint8_t value = 0;
 	int32_t result = NO_ERROR;
 
-	value = operationMode.DcUploadDarkCorrectionValues;
-	value = value + (operationMode.DcCollectDarkCorrectionValues * 0x02);
-	value = value + (operationMode.DcEnableDarkCorrectionCountingMode * 0x04);
-	value = value + (operationMode.DcEnableDarkCorrectionSpectroscopicMode * 0x08);
-	value = value + (operationMode.DcSendDarkCorrectionValues * 0x10);
-	value = value + (operationMode.DcDisableVcalPulse * 0x20);
-	value = value + (operationMode.DcTestMode * 0x40);
-	value = value + (operationMode.DcEnableTriggeredCountingMode * 0x80);
-	result = writeRegister(0x24, value);
+	result = disableSM();
+	if (result == NO_ERROR) {
+        value = operationMode.DcUploadDarkCorrectionValues;
+        value = value + (operationMode.DcCollectDarkCorrectionValues * 0x02);
+        value = value + (operationMode.DcEnableDarkCorrectionCountingMode * 0x04);
+        value = value + (operationMode.DcEnableDarkCorrectionSpectroscopicMode * 0x08);
+        value = value + (operationMode.DcSendDarkCorrectionValues * 0x10);
+        value = value + (operationMode.DcDisableVcalPulse * 0x20);
+        value = value + (operationMode.DcTestMode * 0x40);
+        value = value + (operationMode.DcEnableTriggeredCountingMode * 0x80);
+        result = writeRegister(0x24, value);
+	}
 	if (result == NO_ERROR) {
 		value = operationMode.EdUploadThresholdValues;
 		value = value + (operationMode.EdDisableCountingMode * 0x02);
@@ -1109,6 +1133,9 @@ int32_t HexitecApi::setOperationMode(HexitecOperationMode operationMode) {
 		value = operationMode.EdCycles.size1[1];
 		result = writeRegister(0x29, value);
 	}
+    if (result == NO_ERROR) {
+        result = enableSM();
+    }
 	return result;
 }
 

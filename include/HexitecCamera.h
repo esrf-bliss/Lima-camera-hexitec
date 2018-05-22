@@ -24,8 +24,6 @@
 
 #include <limits>
 #include <memory>
-#include <future>
-#include <atomic>
 #include "lima/HwBufferMgr.h"
 #include "lima/HwMaxImageSizeCallback.h"
 #include <HexitecSavingCtrlObj.h>
@@ -48,11 +46,11 @@ DEB_CLASS_NAMESPC(DebModCamera, "Camera", "Hexitec");
 
 	friend class Interface;
 public:
-	Camera(const std::string& ipAddress, const std::string& configFilename, int bufferCount=50, int timeout=600, int asicPitch=250);
+	Camera(const std::string& ipAddress, const std::string& configFilename, int bufferCount=50, int timeout=6000, int asicPitch=250);
 	~Camera();
 
 	enum Status { Ready, Initialising, Exposure, Readout, Paused, Fault };
-	enum SaveOpt { SaveRaw=1, SaveProcessed=2, SaveHistogram=4 };
+	enum SaveOpt { SaveNothing=0, SaveRaw=1, SaveProcessed=2, SaveHistogram=4, SaveSummed=8};
 	enum ProcessType {
 		RAW,     ///< Raw data - no correction
 		SORT,    ///< Sorted data
@@ -133,6 +131,8 @@ public:
 	void getOperatingValues(OperatingValues& opval);
 	void getCollectDcTimeout(int& timeout);
 	void setCollectDcTimeout(int timeout);
+    void getFrameTimeout(int& timeout);
+    void setFrameTimeout(int timeout);
 	void collectOffsetValues();
 	void setType(ProcessType type);
 	void getType(ProcessType& type);
@@ -155,15 +155,22 @@ public:
 	void getBiasVoltageRefreshInterval(int& millis);
 	void getBiasVoltageRefreshTime(int& millis);
 	void getBiasVoltageSettleTime(int& millis);
+	void setBiasVoltage(int volts);
+	void getBiasVoltage(int& volts);
+	void setRefreshVoltage(int volts);
+	void getRefreshVoltage(int& volts);
+	void setFramesPerTrigger(int nframes);
+	void getFramesPerTrigger(int& nframes);
+	void getSkippedFrameCount(int& count);
 
 private:
 	class AcqThread;
 	class TimerThread;
 	class TaskEventCb;
-	
+
 	struct Private;
 	std::shared_ptr<Private> m_private;
-	
+
 	// Buffer control object
 	SoftBufferCtrlObj* m_bufferCtrlObj;
 	// Saving control object
@@ -191,6 +198,7 @@ private:
 	double m_frameTime;
 	int m_nb_frames;
 	TrigMode m_trig_mode;
+	int m_framesPerTrigger;
 	int m_collectDcTimeout;
 // for processing
 	ProcessType m_processType;
@@ -204,6 +212,7 @@ private:
 	int m_biasVoltageRefreshTime;
 	int m_biasVoltageSettleTime;
 	int m_saveOpt;
+	int m_errCount;
 };
 } // namespace Hexitec
 } // namespace lima

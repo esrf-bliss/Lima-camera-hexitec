@@ -14,12 +14,12 @@
 #endif
 
 #include <cstdint>
-#include <pthread.h>
 #include <string>
 #include <vector>
 #include <iostream>
 #include <fstream>
 #include <functional>
+#include <mutex>
 
 #ifndef COMPILE_HEXITEC_DUMMY
 #include <GigE.h>
@@ -156,7 +156,7 @@ public:
 	Control EdTestMode;
 	Reg2Byte EdCycles;
 	Control enSyncMode;
-	Control enTriggerMode;
+//	Control enTriggerMode;
 };
 
 class HexitecApi
@@ -213,16 +213,25 @@ public:
 	int32_t stopAcquisition();
 	int32_t uploadOffsetValues(Reg2Byte* offsetValues, uint32_t offsetValuesLength);
 	int32_t checkTemperatureLimit(double& temperature);
+    void    setBiasVoltage(int volts);
+    void    getBiasVoltage(int& volts);
+    void    setRefreshVoltage(int volts);
+    void    getRefreshVoltage(int& volts);
+    int32_t disableTriggerGate();
+    int32_t disableTriggerMode();
+    int32_t enableTriggerGate();
+    int32_t enableTriggerMode();
+    int32_t setTriggerCountingMode(bool enable);
 
 private:
 	std::string m_deviceDescriptor;
-	pthread_mutex_t mutexLock;
 	uint32_t m_timeout;
 	HexitecSensorConfig m_sensorConfig;
 	HexitecOperationMode m_operationMode;
 	HexitecSystemConfig m_systemConfig;
 	HexitecBiasConfig m_biasConfig;
 	std::ifstream m_file;
+	std::mutex mutexLock;
 
 	#ifndef COMPILE_HEXITEC_DUMMY
 	class HexitecArmedCb : public GigE::AcqArmedCallback {
@@ -247,13 +256,9 @@ private:
 
 	int32_t disableSM();
 	int32_t disableSyncMode();
-	int32_t disableTriggerGate();
-	int32_t disableTriggerMode();
 	int32_t enableFunctionBlocks(Control adcEnable, Control dacEnable, Control peltierEnable);
 	int32_t enableSM();
 	int32_t enableSyncMode();
-	int32_t enableTriggerGate();
-	int32_t enableTriggerMode();
 	int32_t readRegister(uint8_t registerAddress, uint8_t& value);
 	int32_t readResolution(uint8_t& width, uint8_t& height);
 	int32_t serialPortWriteRead(const uint8_t* txBuffer, uint32_t txBufferSize, uint32_t& bytesWritten, uint8_t* rxBuffer,

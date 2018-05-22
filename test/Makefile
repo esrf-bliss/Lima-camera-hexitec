@@ -29,7 +29,7 @@ LDFLAGS = -pthread -L../../../build  -L../../../third-party/Processlib/build -L/
 LDLIBS = -llimacore  -lprocesslib
 else
 LDFLAGS = -pthread -L../../../build  -L../../../third-party/Processlib/build -L../sdk/tools/src -L$(PLEORA_ROOT)/pleora/ebus_sdk/CentOS-RHEL-7-x86_64/lib -L/usr/lib64 
-LDLIBS = -llimacore  -lprocesslib -lPvDevice -lPvStream -lPvBuffer -lPvGenICam -lPvBase -lPvSerial -lEbUtilsLib -ludev
+LDLIBS = -llimacore  -lprocesslib -lPvDevice -lPvStream -lPvBuffer -lPvGenICam -lPvBase -lPvSerial -lPvSystem -lEbUtilsLib -ludev
 endif
 
 CXXFLAGS = -I../include \
@@ -63,12 +63,12 @@ endif
 HDF5_LDFLAGS := -L../../../third-party/hdf5/c++/src/.libs -L../../../third-party/hdf5/src/.libs -L../../../install/Lima/lib
 HDF5_LDLIBS := -lhdf5_cpp -lhdf5
 
-test-progs = test2 test4
+test-progs = test4
 
 all: 	$(test-progs)
 
-test2:		test2.o ../src/Hexitec.o
-	$(CXX) $(LDFLAGS) -o $@ $+  $(HDF5_LDFLAGS) $(HDF5_LDLIBS) $(LDLIBS)
+#test2:		test2.o ../src/Hexitec.o
+#	$(CXX) $(LDFLAGS) -o $@ $+  $(HDF5_LDFLAGS) $(HDF5_LDLIBS) $(LDLIBS)
 
 test4:		test4.o ../src/Hexitec.o
 	$(CXX) $(LDFLAGS) -o $@ $+  $(HDF5_LDFLAGS) $(HDF5_LDLIBS) $(LDLIBS)
