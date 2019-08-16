@@ -22,6 +22,7 @@
 //
 // HexitecSavingCtrlObj.cpp
 
+#include <math.h>
 #include "HexitecInterface.h"
 #include "HexitecSavingCtrlObj.h"
 #include "H5Cpp.h"
@@ -547,7 +548,7 @@ void SavingCtrlObj::HwSavingStream::prepare() {
 	// catch failure caused by the DataSet operations
 	catch (DataSetIException& error) {
 		THROW_CTL_ERROR(Error) << "DataSet " << filename << " not created successfully";
-		error.printError();
+		error.printErrorStack();
 	}
 	// catch failure caused by the DataSpace operations
 	catch (DataSpaceIException& error) {

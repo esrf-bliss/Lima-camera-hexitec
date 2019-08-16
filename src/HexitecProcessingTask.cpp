@@ -23,6 +23,7 @@
 #include <algorithm>
 #include <vector>
 #include <atomic>
+#include <math.h>
 #include "processlib/PoolThreadMgr.h"
 #include "processlib/TaskMgr.h"
 
@@ -305,7 +306,7 @@ void HexitecProcessingTask::createSpectra(Data& srcData) {
 	for (auto i=0; i<height; i++) {
 		for (auto j=0; j<width; j++, dptr++) {
 			if (*dptr > m_lowThreshold && *dptr < m_highThreshold) {
-			    int depth = int(ceil((*dptr)*m_nbins/m_highThreshold));
+			  int depth = int(ceil((*dptr)*m_nbins/m_highThreshold));
 				int idx = depth*width*height + i*width + j;
 				std::atomic<uint32_t*> sp;
                 std::atomic<uint64_t*> tp;
